@@ -1,0 +1,11 @@
+node_modules
+dist
+.hopak
+*.log
+.DS_Store
+.env
+.env.local
+*.tsbuildinfo
+coverage
+.cache
+bun.lockb

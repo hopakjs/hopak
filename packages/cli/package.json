@@ -1,0 +1,34 @@
+{
+  "name": "@hopak/cli",
+  "version": "0.0.1",
+  "description": "Command-line interface for Hopak.js — scaffold projects, run dev server, generate files.",
+  "license": "MIT",
+  "author": "Volodymyr Press <vladimpress@gmail.com>",
+  "homepage": "https://github.com/hopakjs/hopak#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hopakjs/hopak.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/hopakjs/hopak/issues"
+  },
+  "keywords": ["hopak", "cli", "bun", "scaffold", "generator"],
+  "type": "module",
+  "main": "./src/index.ts",
+  "bin": {
+    "hopak": "./src/bin.ts"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@hopak/common": "workspace:*",
+    "@hopak/core": "workspace:*"
+  }
+}

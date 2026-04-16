@@ -1,0 +1,49 @@
+{
+  "name": "@hopak/core",
+  "version": "0.0.1",
+  "description": "Hopak.js framework core — models, routing, database, validation, auto-CRUD.",
+  "license": "MIT",
+  "author": "Volodymyr Press <vladimpress@gmail.com>",
+  "homepage": "https://github.com/hopakjs/hopak#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hopakjs/hopak.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/hopakjs/hopak/issues"
+  },
+  "keywords": [
+    "bun",
+    "backend",
+    "framework",
+    "typescript",
+    "orm",
+    "rest-api",
+    "crud",
+    "zod",
+    "drizzle"
+  ],
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@hopak/common": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@hopak/testing": "workspace:*"
+  }
+}

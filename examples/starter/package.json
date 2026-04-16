@@ -1,0 +1,16 @@
+{
+  "name": "hopak-starter",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "hopak dev",
+    "start": "bun run main.ts"
+  },
+  "dependencies": {
+    "@hopak/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@hopak/cli": "workspace:*"
+  }
+}

@@ -1,0 +1,4 @@
+node_modules
+.hopak
+*.log
+.env
