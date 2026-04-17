@@ -14,7 +14,7 @@ bun add @hopak/core
 // main.ts
 import { hopak } from '@hopak/core';
 
-await hopak().listen(3000);
+await hopak().listen();
 ```
 
 Then drop a model in `app/models/post.ts`:

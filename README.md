@@ -364,16 +364,32 @@ cors: { origins: '*' }
 
 ## HTTPS
 
-Local HTTPS works with one flag — Hopak generates a self-signed certificate on first run and caches it under `.hopak/certs/`. Requires `openssl` on the machine.
+Enable in config — Hopak generates a self-signed certificate on first run and caches it under `.hopak/certs/`. Requires `openssl` on the machine.
 
 ```ts
-import { ensureDevCert, startServer } from '@hopak/core';
+// hopak.config.ts
+import { defineConfig } from '@hopak/core';
 
-const tls = await ensureDevCert({ certDir: '.hopak/certs' });
-await startServer({ port: 3443, tls });
+export default defineConfig({
+  server: {
+    https: { enabled: true, port: 3443 },
+  },
+});
 ```
 
-In production: provide your own `tls.key` and `tls.cert` paths.
+```ts
+// main.ts — no changes needed
+import { hopak } from '@hopak/core';
+await hopak().listen();
+```
+
+In production: supply your own cert and key paths:
+
+```ts
+server: {
+  https: { enabled: true, cert: '/etc/ssl/cert.pem', key: '/etc/ssl/key.pem' },
+}
+```
 
 ---
 

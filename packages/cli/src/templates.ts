@@ -45,11 +45,14 @@ export function projectTemplate(name: string): ProjectTemplate {
         null,
         2,
       ),
-      'main.ts': `import { hopak } from '@hopak/core';\n\nawait hopak().listen(3000);\n`,
+      'main.ts': `import { hopak } from '@hopak/core';\n\nawait hopak().listen();\n`,
       'hopak.config.ts': `import { defineConfig } from '@hopak/core';
 
 export default defineConfig({
+  server: { port: 3000 },
   database: { dialect: 'sqlite', file: '.hopak/data.db' },
+  // Enable HTTPS in dev — a self-signed cert is generated on first boot:
+  // server: { https: { enabled: true, port: 3443 } },
 });
 `,
       '.gitignore': 'node_modules\n.hopak\n*.log\n.env\n.env.local\n',
