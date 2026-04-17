@@ -65,6 +65,29 @@ describe('startServer', () => {
     expect(res.body.hasDb).toBe(false);
   });
 
+  test('ctx.body() and ctx.text() can both be called in the same handler', async () => {
+    const router = new Router();
+    router.add(
+      'POST',
+      '/body-text',
+      defineRoute({
+        handler: async (ctx) => {
+          const body = await ctx.body();
+          const raw = await ctx.text();
+          return { body, rawLength: raw.length };
+        },
+      }),
+    );
+    env = await createTestServer({ router });
+
+    const res = await env.client.post<{ body: unknown; rawLength: number }>('/body-text', {
+      hello: 'world',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.body).toEqual({ hello: 'world' });
+    expect(res.body.rawLength).toBeGreaterThan(0);
+  });
+
   test('passes path params to handler', async () => {
     const router = new Router();
     router.add('GET', '/posts/[id]', defineRoute({ handler: (ctx) => ({ id: ctx.params.id }) }));

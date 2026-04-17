@@ -26,22 +26,33 @@ export interface ContextResult {
 const JSON_CONTENT_TYPE = 'application/json';
 const DEFAULT_STATUS = 200;
 
-async function parseJsonBody(req: Request, log: Logger): Promise<unknown> {
-  const contentType = req.headers.get('content-type') ?? '';
-  if (!contentType.includes(JSON_CONTENT_TYPE)) return null;
-  try {
-    return await req.json();
-  } catch (cause) {
-    log.warn('Failed to parse JSON request body', { cause: errorMessage(cause) });
-    return null;
-  }
-}
-
 export function buildContext(inputs: ContextInputs): ContextResult {
   const responseInit: ResponseInit = { status: DEFAULT_STATUS, headers: new Headers() };
 
+  // The request body stream can be consumed only once. We read it to a string
+  // lazily on first access (via ctx.text() or ctx.body()) and cache it, so
+  // subsequent calls — including ctx.body() after ctx.text() and vice versa —
+  // operate on the cached copy instead of touching the exhausted stream.
+  let rawPromise: Promise<string> | undefined;
   let bodyPromise: Promise<unknown> | undefined;
-  let textPromise: Promise<string> | undefined;
+
+  const readRaw = (): Promise<string> => {
+    rawPromise ??= inputs.req.text();
+    return rawPromise;
+  };
+
+  const parseJsonBody = async (): Promise<unknown> => {
+    const contentType = inputs.req.headers.get('content-type') ?? '';
+    if (!contentType.includes(JSON_CONTENT_TYPE)) return null;
+    const raw = await readRaw();
+    if (raw.length === 0) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (cause) {
+      inputs.log.warn('Failed to parse JSON request body', { cause: errorMessage(cause) });
+      return null;
+    }
+  };
 
   const ctx: RequestContext = {
     req: inputs.req,
@@ -55,12 +66,11 @@ export function buildContext(inputs: ContextInputs): ContextResult {
     log: inputs.log,
     db: inputs.db,
     body() {
-      bodyPromise ??= parseJsonBody(inputs.req, inputs.log);
+      bodyPromise ??= parseJsonBody();
       return bodyPromise;
     },
     text() {
-      textPromise ??= inputs.req.text();
-      return textPromise;
+      return readRaw();
     },
     setHeader(name, value) {
       responseInit.headers.set(name, value);
