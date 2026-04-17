@@ -89,6 +89,38 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Resolve workspace:* to semver
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${REF_NAME#v}"
+          fi
+          SEMVER="^$VERSION"
+          echo "Rewriting workspace:* to $SEMVER"
+          for pkg in packages/*/package.json; do
+            NAME=$(jq -r .name "$pkg")
+            jq --arg v "$SEMVER" '
+              if .dependencies then .dependencies |= with_entries(
+                if .value == "workspace:*" then .value = $v else . end
+              ) else . end
+              |
+              if .devDependencies then .devDependencies |= with_entries(
+                if .value == "workspace:*" then .value = $v else . end
+              ) else . end
+              |
+              if .peerDependencies then .peerDependencies |= with_entries(
+                if .value == "workspace:*" then .value = $v else . end
+              ) else . end
+            ' "$pkg" > "$pkg.tmp" && mv "$pkg.tmp" "$pkg"
+            echo "--- $NAME ---"
+            jq '{dependencies, devDependencies, peerDependencies}' "$pkg"
+          done
+
       - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
