@@ -72,3 +72,9 @@ All packages share one version. A release publishes them as a set.
 ## Dry-run first
 
 Before a real publish, always run with `dry-run: true` to catch missing files, permissions, or name conflicts before they hit the registry.
+
+---
+
+## Author
+
+**Volodymyr Press** · [vladimpress@gmail.com](mailto:vladimpress@gmail.com) · [github.com/hopakjs](https://github.com/hopakjs)

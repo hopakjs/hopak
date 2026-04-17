@@ -33,155 +33,501 @@ Server on `http://localhost:3000`. Drop a model in `app/models/` and you get aut
 
 ## Recipes
 
-Short, copy-pasteable answers to common backend tasks. Below each one is the entire thing.
+Common backend tasks, step by step. Every recipe shows **where the file goes**, the **code**, **how to run it**, and **what you should see**. Start from a freshly scaffolded project (`hopak new my-app` → `cd my-app` → `bun install`).
 
-### Create a REST resource
+### 1. Create a REST resource
 
-One file — six endpoints (`GET /api/posts`, `POST`, `GET/PUT/PATCH/DELETE /api/posts/:id`):
+**Goal:** expose `GET/POST /api/posts` and `GET/PUT/PATCH/DELETE /api/posts/:id` from a single file.
+
+**1.** Create the model file:
 
 ```ts
 // app/models/post.ts
-import { model, text } from '@hopak/core';
-export default model('post', { title: text().required() }, { crud: true });
+import { model, text, boolean } from '@hopak/core';
+
+export default model(
+  'post',
+  {
+    title: text().required().min(3),
+    content: text().required(),
+    published: boolean().default(false),
+  },
+  { crud: true },  // ← enables auto-CRUD; without this the model has no endpoints
+);
 ```
 
-### Validate input
+**2.** Start the server:
 
-Add constraints on the field. A bad request returns `400` with field-level details.
+```bash
+hopak dev
+```
+
+**3.** Try it from another terminal:
+
+```bash
+curl -X POST http://localhost:3000/api/posts \
+  -H 'content-type: application/json' \
+  -d '{"title":"Hello","content":"World"}'
+```
+
+Expected response (`201 Created`):
+
+```json
+{ "id": 1, "title": "Hello", "content": "World", "published": false,
+  "createdAt": "...", "updatedAt": "..." }
+```
+
+**4.** List them:
+
+```bash
+curl http://localhost:3000/api/posts
+# → { "items": [...], "total": 1, "limit": 20, "offset": 0 }
+```
+
+That's it. One file, six endpoints, pagination included.
+
+### 2. Validate input
+
+**Goal:** reject malformed requests with clear, per-field error messages.
+
+Validation is generated **from the model** — you don't write a separate schema.
+
+**1.** Add constraints:
 
 ```ts
-model('user', {
-  email: email().required().unique(),
-  age: number().optional().min(18).max(120),
-  role: enumOf('admin', 'user', 'guest').default('user'),
-}, { crud: true });
+// app/models/user.ts
+import { model, text, email, enumOf, number } from '@hopak/core';
+
+export default model(
+  'user',
+  {
+    name: text().required().min(2).max(100),
+    email: email().required().unique(),
+    age: number().optional().min(18).max(120),
+    role: enumOf('admin', 'user', 'guest').default('user'),
+  },
+  { crud: true },
+);
 ```
 
-### Hide sensitive fields
+**2.** Send a bad request:
 
-`password()`, `secret()`, `token()` are auto-stripped from every JSON response:
+```bash
+curl -X POST http://localhost:3000/api/users \
+  -H 'content-type: application/json' \
+  -d '{"name":"X","email":"not-an-email","age":5,"role":"superman"}'
+```
+
+Response (`400 Bad Request`):
+
+```json
+{
+  "error": "VALIDATION_ERROR",
+  "message": "Invalid body",
+  "details": {
+    "name":  ["Too small: expected string to have >=2 characters"],
+    "email": ["Invalid email address"],
+    "age":   ["Too small: expected number to be >=18"],
+    "role":  ["Invalid option: expected one of \"admin\"|\"user\"|\"guest\""]
+  }
+}
+```
+
+Every failing field has an array of human-readable messages.
+
+### 3. Hide sensitive fields
+
+**Goal:** store passwords and API tokens in the database, but **never** return them in responses.
+
+`password()`, `secret()`, and `token()` are automatically stripped from every JSON response — including list endpoints, single-row fetches, and `POST`/`PATCH`/`PUT` replies.
 
 ```ts
-model('user', {
-  email: email().required(),
-  password: password().required().min(8),
-  apiKey: token(),
-});
+// app/models/user.ts
+import { model, text, email, password, token } from '@hopak/core';
+
+export default model(
+  'user',
+  {
+    name: text().required(),
+    email: email().required().unique(),
+    password: password().required().min(8),
+    apiKey: token().optional(),
+  },
+  { crud: true },
+);
 ```
 
-### Add a custom endpoint
+**Verify:**
 
-Just drop a file. Its path in `app/routes/` becomes the URL.
+```bash
+curl -X POST http://localhost:3000/api/users \
+  -H 'content-type: application/json' \
+  -d '{"name":"Alice","email":"a@b.com","password":"secret12","apiKey":"tok_abc"}'
+```
+
+Response — notice `password` and `apiKey` are **missing**, even though they were stored:
+
+```json
+{ "id": 1, "name": "Alice", "email": "a@b.com",
+  "createdAt": "...", "updatedAt": "..." }
+```
+
+Same when you `GET /api/users/1`.
+
+### 4. Add a custom endpoint
+
+**Goal:** create `POST /posts/:id/publish` that flips the `published` flag.
+
+The URL is derived from the **file path** under `app/routes/`. Square brackets mark dynamic segments.
 
 ```ts
 // app/routes/posts/[id]/publish.ts
-import { defineRoute } from '@hopak/core';
-export const POST = defineRoute({
-  handler: (ctx) => ({ id: ctx.params.id, published: true }),
-});
-```
+import { defineRoute, NotFound } from '@hopak/core';
 
-### Override one auto-CRUD endpoint
-
-A file route with the same method/path wins — the other five endpoints stay intact:
-
-```ts
-// app/routes/posts.ts  —  overrides POST /api/posts only
 export const POST = defineRoute({
   handler: async (ctx) => {
-    /* your custom create logic */
+    const id = Number(ctx.params.id);
+    const post = await ctx.db?.model('post').findOrFail(id);
+    const updated = await ctx.db?.model('post').update(id, { published: true });
+    return { previous: post.published, updated };
   },
 });
 ```
 
-### Throw a typed error
+Test:
 
-Any `HopakError` subclass serialises to the correct status:
-
-```ts
-import { NotFound } from '@hopak/core';
-throw new NotFound('Post not found');
-// → 404 { "error": "NOT_FOUND", "message": "Post not found" }
+```bash
+curl -X POST http://localhost:3000/posts/1/publish
+# → { "previous": false, "updated": { "id": 1, "published": true, ... } }
 ```
 
-### Define a custom error
+Export multiple methods from one file:
 
 ```ts
+export const GET = defineRoute({ handler: () => ({ /* ... */ }) });
+export const POST = defineRoute({ handler: () => ({ /* ... */ }) });
+```
+
+### 5. Override one auto-CRUD endpoint
+
+**Goal:** replace just the `POST /api/posts` handler with custom logic, keep the other five auto-CRUD endpoints as they are.
+
+Create a file at the matching path. **File routes always win.**
+
+```ts
+// app/routes/api/posts.ts
+import { defineRoute, ValidationError } from '@hopak/core';
+
+export const POST = defineRoute({
+  handler: async (ctx) => {
+    const body = (await ctx.body()) as { title?: string };
+    if (!body.title?.startsWith('[DRAFT]')) {
+      throw new ValidationError('Title must start with [DRAFT]');
+    }
+    const created = await ctx.db?.model('post').create({
+      title: body.title,
+      content: 'auto-generated draft',
+    });
+    return created;
+  },
+});
+```
+
+Now `POST /api/posts` runs your code, but `GET /api/posts`, `GET /api/posts/:id`, `PUT/PATCH/DELETE /api/posts/:id` still come from auto-CRUD.
+
+### 6. Throw a typed error
+
+**Goal:** stop processing and return a proper HTTP status with a JSON body.
+
+Import a subclass of `HopakError` and throw it anywhere — the framework serialises it for you.
+
+```ts
+// app/routes/posts/[id]/claim.ts
+import { defineRoute, NotFound, Forbidden } from '@hopak/core';
+
+export const POST = defineRoute({
+  handler: async (ctx) => {
+    const id = Number(ctx.params.id);
+    const post = await ctx.db?.model('post').findOne(id);
+    if (!post) throw new NotFound(`Post ${id} not found`);
+    if (post.published) throw new Forbidden('Published posts cannot be claimed');
+    // ... rest of the logic
+    return { ok: true };
+  },
+});
+```
+
+`NotFound` produces:
+
+```
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{ "error": "NOT_FOUND", "message": "Post 42 not found" }
+```
+
+Available out of the box: `ValidationError` (400), `Unauthorized` (401), `Forbidden` (403), `NotFound` (404), `Conflict` (409), `RateLimited` (429), `InternalError` (500).
+
+### 7. Define a custom error
+
+**Goal:** introduce a domain-specific error like `PaymentFailed (402)`.
+
+```ts
+// app/lib/errors.ts
 import { HopakError } from '@hopak/core';
 
-class PaymentFailed extends HopakError {
+export class PaymentFailed extends HopakError {
   override readonly status = 402;
   override readonly code = 'PAYMENT_FAILED';
 }
-throw new PaymentFailed('Insufficient funds');
+
+export class QuotaExceeded extends HopakError {
+  override readonly status = 429;
+  override readonly code = 'QUOTA_EXCEEDED';
+}
 ```
 
-### Query the database inside a handler
-
-`ctx.db.model('<name>')` returns a typed client. Full CRUD, filters, pagination.
+Use it from any handler:
 
 ```ts
+import { PaymentFailed } from '../lib/errors';
+
+throw new PaymentFailed('Insufficient funds', { available: 5, required: 20 });
+```
+
+Response:
+
+```
+HTTP/1.1 402 Payment Required
+Content-Type: application/json
+
+{ "error": "PAYMENT_FAILED", "message": "Insufficient funds",
+  "details": { "available": 5, "required": 20 } }
+```
+
+### 8. Query the database inside a handler
+
+**Goal:** read/write rows from a custom route using the same typed client auto-CRUD uses.
+
+`ctx.db.model('<name>')` returns a client with full CRUD, filters, ordering, and pagination.
+
+```ts
+// app/routes/posts-by-author/[userId].ts
+import { defineRoute } from '@hopak/core';
+
 export const GET = defineRoute({
   handler: async (ctx) => {
+    const userId = Number(ctx.params.userId);
     const posts = await ctx.db?.model('post').findMany({
-      where: { published: true },
+      where: { author: userId, published: true },
       orderBy: [{ field: 'id', direction: 'desc' }],
-      limit: 10,
+      limit: 20,
     });
-    return { posts };
+    const total = await ctx.db?.model('post').count({ where: { author: userId } });
+    return { posts, total };
   },
 });
 ```
 
-### Relations
+Full client surface:
+
+```ts
+client.findMany({ where?, orderBy?, limit?, offset? });
+client.findOne(id);           // TRow | null
+client.findOrFail(id);        // throws NotFound
+client.count({ where? });
+client.create(data);
+client.update(id, data);      // throws NotFound if the row is gone
+client.delete(id);            // returns boolean
+```
+
+If you need raw SQL: `ctx.db?.raw()` returns the underlying Drizzle instance.
+
+### 9. Relations between models
+
+**Goal:** one author has many posts; each post belongs to one author.
+
+Use `belongsTo('user')` on the child side and `hasMany('post')` on the parent. `hasOne` / `hasMany` are **virtual** — they produce no database column, just a hint for tooling.
+
+```ts
+// app/models/user.ts
+import { model, text, email, hasMany } from '@hopak/core';
+
+export default model(
+  'user',
+  {
+    name: text().required(),
+    email: email().required().unique(),
+    posts: hasMany('post'),   // virtual — no column
+  },
+  { crud: true },
+);
+```
 
 ```ts
 // app/models/post.ts
-model('post', { title: text().required(), author: belongsTo('user') });
+import { model, text, belongsTo } from '@hopak/core';
 
-// app/models/user.ts
-model('user', { name: text().required(), posts: hasMany('post') });
+export default model(
+  'post',
+  {
+    title: text().required(),
+    author: belongsTo('user'),   // creates `author_id` foreign key
+  },
+  { crud: true },
+);
 ```
 
-### Enable HTTPS for local dev
+Create rows:
 
-Flip one flag in config — Hopak generates a self-signed cert, nothing else to do:
+```bash
+curl -X POST http://localhost:3000/api/users \
+  -H 'content-type: application/json' -d '{"name":"Alice","email":"a@b.com"}'
+# → { "id": 1, ... }
+
+curl -X POST http://localhost:3000/api/posts \
+  -H 'content-type: application/json' -d '{"title":"Hi","author":1}'
+# → { "id": 1, "title": "Hi", "author": 1, ... }
+```
+
+### 10. Enable HTTPS for local dev
+
+**Goal:** test your frontend against `https://localhost:3443` without configuring OpenSSL by hand.
+
+**1.** Enable it in config:
 
 ```ts
 // hopak.config.ts
+import { defineConfig } from '@hopak/core';
+
 export default defineConfig({
-  server: { https: { enabled: true } },  // port 3443 by default
+  server: { https: { enabled: true, port: 3443 } },
 });
 ```
 
-### Allow CORS from your frontend
+**2.** Restart:
+
+```bash
+hopak dev
+```
+
+First boot generates a self-signed certificate under `.hopak/certs/` (the directory is `.gitignore`d automatically). Subsequent boots reuse it.
+
+**3.** Verify:
+
+```bash
+curl -k https://localhost:3443/           # -k accepts the self-signed cert
+```
+
+For **production**, point to real certificate files:
 
 ```ts
-export default defineConfig({
-  cors: { origins: ['http://localhost:5173'], credentials: true },
-});
+server: {
+  https: { enabled: true, cert: '/etc/ssl/myapp.crt', key: '/etc/ssl/myapp.key' },
+}
 ```
 
-### Serve static files
+### 11. Allow CORS from your frontend
 
-Anything in `public/` is served at the root with `ETag`, `Cache-Control`, `Last-Modified`, and path-traversal protection. No setup required.
-
-### Move your source somewhere else
+**Goal:** let a Vite/Next frontend at `http://localhost:5173` call your API with cookies.
 
 ```ts
+// hopak.config.ts
+import { defineConfig } from '@hopak/core';
+
 export default defineConfig({
-  paths: { models: 'src/domain', routes: 'src/api' },
+  cors: {
+    origins: ['http://localhost:5173', 'https://myapp.com'],
+    credentials: true,
+  },
 });
 ```
 
-### Scaffold files from CLI
+Preflight (`OPTIONS`) is handled automatically. Requests from origins not in the list get no CORS headers — browsers reject them.
+
+Public API? Use `'*'`:
+
+```ts
+cors: { origins: '*' }
+```
+
+### 12. Serve static files
+
+**Goal:** serve `favicon.ico`, images, a built SPA, etc.
+
+Drop files in `public/`. They're served at the root:
+
+```
+public/
+├── index.html        → GET /              (served if no file route matches)
+├── favicon.ico       → GET /favicon.ico
+└── assets/
+    ├── logo.svg      → GET /assets/logo.svg
+    └── app.js        → GET /assets/app.js
+```
+
+Hopak sets `ETag`, `Cache-Control: public, max-age=300`, and `Last-Modified` headers. Path-traversal attempts (`/../../etc/passwd`) return `404`. No setup required.
+
+A file-based route always wins over a static file at the same path — useful if you want `/` to be a JSON endpoint even when `public/index.html` exists.
+
+### 13. Move your source somewhere else
+
+**Goal:** use `src/domain/` and `src/api/` instead of `app/models/` and `app/routes/`.
+
+```ts
+// hopak.config.ts
+import { defineConfig } from '@hopak/core';
+
+export default defineConfig({
+  paths: {
+    models: 'src/domain',
+    routes: 'src/api',
+    public: 'static',
+  },
+});
+```
+
+After this, `hopak generate model post` writes to `src/domain/post.ts`, and `hopak dev` / `hopak check` look in the new directories. All paths resolve relative to the project root.
+
+### 14. Scaffold files from the CLI
+
+**Goal:** don't write boilerplate by hand — let `hopak generate` create the file with a starter template.
 
 ```bash
 hopak generate model comment
-hopak generate route posts/[id]/publish
+# Creates app/models/comment.ts
 ```
 
-Creates `app/models/comment.ts` and `app/routes/posts/[id]/publish.ts` from templates.
+Contents of the generated file:
+
+```ts
+import { model, text } from '@hopak/core';
+
+export default model(
+  'comment',
+  {
+    name: text().required(),
+  },
+  { crud: true },
+);
+```
+
+Replace the fields with your real schema and save — hot-reload picks it up.
+
+```bash
+hopak generate route posts/[id]/publish
+# Creates app/routes/posts/[id]/publish.ts
+```
+
+```ts
+import { defineRoute } from '@hopak/core';
+
+export const GET = defineRoute({
+  handler: (ctx) => ({ ok: true, path: ctx.path }),
+});
+```
+
+Rename `GET` to `POST` (or add more methods) for the actual handler. Short form: `hopak g model comment` works too.
 
 ---
 
@@ -620,5 +966,9 @@ my-app/
 ## License
 
 MIT.
+
+## Author
+
+**Volodymyr Press** · [vladimpress@gmail.com](mailto:vladimpress@gmail.com) · [github.com/hopakjs](https://github.com/hopakjs)
 
 Made with ❤️ in Ukraine 🇺🇦

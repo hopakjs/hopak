@@ -249,3 +249,7 @@ Full framework documentation: https://github.com/hopakjs/hopak
 ## License
 
 MIT.
+
+## Author
+
+**Volodymyr Press** · [vladimpress@gmail.com](mailto:vladimpress@gmail.com) · [github.com/hopakjs](https://github.com/hopakjs)
