@@ -1,6 +1,6 @@
 {
   "name": "@hopak/cli",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Command-line interface for Hopak.js — scaffold projects, run dev server, generate files.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",
