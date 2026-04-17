@@ -19,11 +19,14 @@ export interface ServerOptions {
 }
 
 export interface HttpsOptions {
+  /** Enable HTTPS listener. When true, a self-signed cert is auto-generated unless `cert`+`key` are provided. */
   enabled: boolean;
+  /** HTTPS port (default 3443). */
   port?: number;
+  /** Path to an existing PEM-encoded certificate. Leave empty to auto-generate a dev cert. */
   cert?: string;
+  /** Path to an existing PEM-encoded private key. Leave empty to auto-generate a dev cert. */
   key?: string;
-  autoCert?: boolean;
 }
 
 export interface DatabaseOptions {
@@ -37,18 +40,11 @@ export interface CorsOptions {
   credentials?: boolean;
 }
 
-export interface RateLimitOptions {
-  max: number;
-  window: string;
-}
-
 export interface HopakConfig {
   server: ServerOptions;
   database: DatabaseOptions;
   paths: HopakPaths;
   cors?: CorsOptions;
-  rateLimit?: RateLimitOptions;
-  strict?: boolean;
   logLevel?: LogLevel;
 }
 

@@ -25,7 +25,6 @@ export function defaultConfig(rootDir: string): HopakConfig {
       migrations: resolve(rootDir, DEFAULT_PATHS.migrations),
       hopakDir: resolve(rootDir, DEFAULT_PATHS.hopakDir),
     },
-    strict: false,
     logLevel: 'info',
   };
 }

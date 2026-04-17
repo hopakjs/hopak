@@ -6,7 +6,7 @@ import { createRequestHandler } from './request-pipeline';
 import { Router } from './router';
 import { createStaticHandler } from './static';
 
-export interface ServerOptions {
+export interface StartServerOptions {
   port?: number;
   host?: string;
   log?: Logger;
@@ -30,7 +30,7 @@ function buildUrl(host: string, port: number, secure: boolean): string {
   return `${protocol}://${display}:${port}`;
 }
 
-export async function startServer(options: ServerOptions): Promise<ListeningServer> {
+export async function startServer(options: StartServerOptions): Promise<ListeningServer> {
   const log = options.log ?? createLogger();
   const router = options.router ?? new Router();
   const staticHandler = options.staticDir

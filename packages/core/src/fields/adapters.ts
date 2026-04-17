@@ -66,10 +66,24 @@ const booleanInt: FieldAdapter = {
   zod: () => z.boolean(),
 };
 
+// `z.coerce.date()` silently passes `new Date("not-a-date")` (an Invalid Date
+// object), and Zod's downstream check then emits the confusing
+// "expected date, received Date" error. We build our own schema that accepts
+// ISO strings / timestamps / Date instances and fails fast with "Invalid date"
+// on anything `new Date(...)` cannot parse.
+const dateSchema = z.union([z.date(), z.string(), z.number()]).transform((value, ctx) => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    ctx.addIssue({ code: 'custom', message: 'Invalid date' });
+    return z.NEVER;
+  }
+  return d;
+});
+
 const dateInt: FieldAdapter = {
   sqliteClass: 'INTEGER',
   drizzleColumn: (name) => integer(name, { mode: 'timestamp' }),
-  zod: () => z.coerce.date(),
+  zod: () => dateSchema,
 };
 
 const jsonText: FieldAdapter = {

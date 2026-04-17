@@ -24,7 +24,6 @@ export type {
   HttpsOptions,
   DatabaseOptions,
   CorsOptions,
-  RateLimitOptions,
   HopakConfig,
   HopakConfigInput,
   RuntimeContext,

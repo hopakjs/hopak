@@ -1,3 +1,4 @@
+export * from '@hopak/common';
 export * from './fields';
 export * from './model';
 export * from './scanner';

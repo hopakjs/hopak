@@ -3,6 +3,7 @@ import {
   belongsTo,
   boolean,
   buildModelSchema,
+  date,
   email,
   enumOf,
   model,
@@ -116,5 +117,27 @@ describe('boolean validation passes through', () => {
     const schema = buildModelSchema(m, { omitId: true });
     expect(validate(schema, { published: true }).ok).toBe(true);
     expect(validate(schema, { published: 'yes' }).ok).toBe(false);
+  });
+});
+
+describe('date field', () => {
+  test('accepts ISO string', () => {
+    const m = model('post', { publishedAt: date().required() });
+    const schema = buildModelSchema(m, { omitId: true });
+    const result = validate<{ publishedAt: Date }>(schema, { publishedAt: '2026-01-15T10:00:00Z' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.publishedAt).toBeInstanceOf(Date);
+    }
+  });
+
+  test('rejects invalid date string with clear message', () => {
+    const m = model('post', { publishedAt: date().required() });
+    const schema = buildModelSchema(m, { omitId: true });
+    const result = validate(schema, { publishedAt: 'not-a-date' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.publishedAt?.[0]).toBe('Invalid date');
+    }
   });
 });

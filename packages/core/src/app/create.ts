@@ -1,15 +1,19 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdir, readFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { type HopakConfig, type HopakConfigInput, type Logger, createLogger } from '@hopak/common';
 import { registerCrudRoutes } from '../crud/register';
 import type { Database } from '../db/client';
 import { createDatabase } from '../db/factory';
+import { ensureDevCert } from '../http/certs';
 import { loadFileRoutes } from '../http/loader';
 import { Router } from '../http/router';
 import { type ListeningServer, startServer } from '../http/server';
 import { ModelRegistry } from '../model/registry';
 import { Scanner } from '../scanner';
 import { applyConfig, loadConfigFile } from './config';
+
+const DEFAULT_HTTPS_PORT = 3443;
+const DEV_CERT_DIRNAME = 'certs';
 
 export interface CreateAppOptions {
   rootDir?: string;
@@ -80,6 +84,41 @@ async function buildRouter(
   return router;
 }
 
+interface TlsMaterial {
+  readonly cert: string;
+  readonly key: string;
+}
+
+function resolveCertPath(value: string, config: HopakConfig): string {
+  return isAbsolute(value) ? value : resolve(dirname(config.paths.hopakDir), value);
+}
+
+async function resolveTls(config: HopakConfig, log: Logger): Promise<TlsMaterial | undefined> {
+  const https = config.server.https;
+  if (!https?.enabled) return undefined;
+
+  if (https.cert && https.key) {
+    const [cert, key] = await Promise.all([
+      readFile(resolveCertPath(https.cert, config), 'utf8'),
+      readFile(resolveCertPath(https.key, config), 'utf8'),
+    ]);
+    return { cert, key };
+  }
+
+  const certDir = join(config.paths.hopakDir, DEV_CERT_DIRNAME);
+  return ensureDevCert({ certDir, log });
+}
+
+function resolveListenPort(
+  explicit: number | undefined,
+  config: HopakConfig,
+  tls: TlsMaterial | undefined,
+): number {
+  if (explicit !== undefined) return explicit;
+  if (tls) return config.server.https?.port ?? DEFAULT_HTTPS_PORT;
+  return config.server.port;
+}
+
 export async function createApp(options: CreateAppOptions = {}): Promise<HopakApp> {
   const rootDir = options.rootDir ?? process.cwd();
   const log = options.log ?? createLogger();
@@ -102,14 +141,16 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
     log,
 
     async listen(port) {
+      const tls = await resolveTls(config, log);
       server = await startServer({
-        port: port ?? config.server.port,
+        port: resolveListenPort(port, config, tls),
         host: config.server.host,
         router,
         staticDir: config.paths.public,
         log,
         db,
         ...(config.cors ? { cors: config.cors } : {}),
+        ...(tls ? { tls } : {}),
       });
       return server;
     },

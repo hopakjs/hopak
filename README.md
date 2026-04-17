@@ -54,9 +54,13 @@ export default model(
 
 | Type | Notes |
 |------|-------|
-| `text()`, `email()`, `url()`, `phone()` | Strings with format validation |
-| `number()`, `money()` | Numbers with min/max |
-| `boolean()`, `date()`, `timestamp()` | Scalars |
+| `text()` | Free-form string (use `.min/.max/.pattern` to constrain) |
+| `email()` | String with email-format validation |
+| `url()` | String with URL-format validation |
+| `phone()` | String — no built-in regex; add `.pattern(...)` for strict formats |
+| `number()`, `money()` | Numbers with min/max (money stored as real) |
+| `boolean()` | Scalar |
+| `date()`, `timestamp()` | Coerced from ISO strings; rejects invalid dates |
 | `enumOf('a', 'b')` | TypeScript literal union, DB enum |
 | `json<T>()` | Typed JSON column |
 | `belongsTo('user')`, `hasOne('profile')`, `hasMany('post')` | Relations |
