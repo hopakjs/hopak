@@ -1,6 +1,6 @@
 {
   "name": "@hopak/core",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "Hopak.js framework core — models, routing, database, validation, auto-CRUD.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",
@@ -43,7 +43,21 @@
     "drizzle-orm": "^0.45.2",
     "zod": "^4.3.6"
   },
+  "peerDependencies": {
+    "mysql2": "^3.11.0",
+    "postgres": "^3.4.0"
+  },
+  "peerDependenciesMeta": {
+    "mysql2": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@hopak/testing": "workspace:*"
+    "@hopak/testing": "workspace:*",
+    "mysql2": "^3.11.5",
+    "postgres": "^3.4.4"
   }
 }

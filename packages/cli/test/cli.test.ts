@@ -19,7 +19,7 @@ afterEach(async () => {
 
 describe('hopak new', () => {
   test('creates project structure', async () => {
-    const code = await runNew({ name: 'demo', cwd: workDir, log });
+    const code = await runNew({ name: 'demo', cwd: workDir, log, noInstall: true });
     expect(code).toBe(0);
     expect(await pathExists(join(workDir, 'demo/package.json'))).toBe(true);
     expect(await pathExists(join(workDir, 'demo/main.ts'))).toBe(true);
@@ -31,12 +31,12 @@ describe('hopak new', () => {
 
   test('refuses to overwrite existing directory', async () => {
     await mkdir(join(workDir, 'occupied'), { recursive: true });
-    const code = await runNew({ name: 'occupied', cwd: workDir, log });
+    const code = await runNew({ name: 'occupied', cwd: workDir, log, noInstall: true });
     expect(code).toBe(1);
   });
 
   test('package.json contains @hopak/core dependency', async () => {
-    await runNew({ name: 'pkg-test', cwd: workDir, log });
+    await runNew({ name: 'pkg-test', cwd: workDir, log, noInstall: true });
     const pkg = JSON.parse(await readFile(join(workDir, 'pkg-test/package.json'), 'utf8'));
     expect(pkg.dependencies['@hopak/core']).toBeDefined();
     expect(pkg.devDependencies['@hopak/cli']).toBeDefined();

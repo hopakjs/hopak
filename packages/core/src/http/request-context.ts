@@ -29,10 +29,11 @@ const DEFAULT_STATUS = 200;
 export function buildContext(inputs: ContextInputs): ContextResult {
   const responseInit: ResponseInit = { status: DEFAULT_STATUS, headers: new Headers() };
 
-  // The request body stream can be consumed only once. We read it to a string
-  // lazily on first access (via ctx.text() or ctx.body()) and cache it, so
-  // subsequent calls — including ctx.body() after ctx.text() and vice versa —
-  // operate on the cached copy instead of touching the exhausted stream.
+  // The request body stream can be consumed only once. It is read into a
+  // string lazily on first access (via ctx.text() or ctx.body()) and cached,
+  // so subsequent calls — including ctx.body() after ctx.text() and vice
+  // versa — operate on the cached copy instead of touching the exhausted
+  // stream.
   let rawPromise: Promise<string> | undefined;
   let bodyPromise: Promise<unknown> | undefined;
 

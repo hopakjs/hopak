@@ -12,7 +12,7 @@ Command-line interface for [Hopak.js](https://github.com/hopakjs/hopak) — scaf
   - [hopak new](#hopak-new-name)
   - [hopak dev](#hopak-dev)
   - [hopak generate](#hopak-generate-kind-name)
-  - [hopak migrate](#hopak-migrate)
+  - [hopak sync](#hopak-sync)
   - [hopak check](#hopak-check)
   - [hopak --version / --help](#hopak---version----help)
 - [Project structure](#project-structure)
@@ -152,20 +152,27 @@ Leading `/` and trailing `.ts` in the `<path>` argument are stripped automatical
 
 `hopak generate` never overwrites an existing file. If the target already exists the command fails with exit code `1`.
 
-### `hopak migrate`
+### `hopak sync`
 
-Synchronises the database schema with registered models. For SQLite this runs `CREATE TABLE IF NOT EXISTS` for every model and creates the database file if needed. Safe to run repeatedly.
+Applies the model schema to the database without starting the server —
+emits `CREATE TABLE IF NOT EXISTS` for every registered model. Safe to
+run repeatedly (idempotent replay). Useful in CI, or right after
+`hopak use postgres` on a fresh database before `hopak dev`.
 
 ```bash
-hopak migrate
+hopak sync
 ```
 
 Output:
 
 ```
-Applying schema to database {"cwd":"/.../my-app"}
+Syncing schema to database {"cwd":"/.../my-app"}
 Schema synchronized {"models":3,"dialect":"sqlite"}
 ```
+
+This command **does not** handle schema changes (ALTER TABLE, rename,
+column drop). Versioned migrations — `generate` / `up` / `down` /
+`status` — will arrive in a later release under a different command name.
 
 ### `hopak check`
 
@@ -211,7 +218,7 @@ my-app/
 └── main.ts           # entry point executed by hopak dev
 ```
 
-`hopak migrate`, `hopak check`, and `hopak dev` all read `hopak.config.ts` to locate these directories.
+`hopak sync`, `hopak check`, and `hopak dev` all read `hopak.config.ts` to locate these directories.
 
 ## Custom project paths
 
@@ -251,7 +258,7 @@ Typical extensions:
   "scripts": {
     "dev": "hopak dev",
     "start": "bun run main.ts",
-    "migrate": "hopak migrate",
+    "sync": "hopak sync",
     "check": "hopak check",
     "test": "bun test"
   }

@@ -1,21 +1,46 @@
+import type { MySqlColumnBuilderBase } from 'drizzle-orm/mysql-core';
+import {
+  boolean as mysqlBoolean,
+  datetime as mysqlDatetime,
+  double as mysqlDouble,
+  int as mysqlInt,
+  json as mysqlJson,
+  text as mysqlText,
+} from 'drizzle-orm/mysql-core';
+import type { PgColumnBuilderBase } from 'drizzle-orm/pg-core';
+import {
+  boolean as pgBoolean,
+  doublePrecision as pgDoublePrecision,
+  integer as pgInteger,
+  jsonb as pgJsonb,
+  text as pgText,
+  timestamp as pgTimestamp,
+} from 'drizzle-orm/pg-core';
 import { type SQLiteColumnBuilderBase, integer, real, text } from 'drizzle-orm/sqlite-core';
 import { z } from 'zod';
 import type { FieldDefinition, FieldType } from './base';
 
+type SqliteDdl = 'TEXT' | 'INTEGER' | 'REAL';
+type PostgresDdl = 'TEXT' | 'INTEGER' | 'DOUBLE PRECISION' | 'BOOLEAN' | 'TIMESTAMPTZ' | 'JSONB';
+type MysqlDdl = 'TEXT' | 'INT' | 'DOUBLE' | 'TINYINT(1)' | 'DATETIME(3)' | 'JSON';
+
 type SqliteColumnFactory = (name: string) => SQLiteColumnBuilderBase;
-type SqliteSqlClass = 'TEXT' | 'INTEGER' | 'REAL';
+type PostgresColumnFactory = (name: string) => PgColumnBuilderBase;
+type MysqlColumnFactory = (name: string) => MySqlColumnBuilderBase;
+
 type ZodFactory = (field: FieldDefinition) => z.ZodType | null;
 
+interface DialectSlot<TDdl, TFactory> {
+  readonly ddl: TDdl | null;
+  readonly column: TFactory | null;
+}
+
 export interface FieldAdapter {
-  /** Underlying SQL storage class for raw DDL emission. */
-  readonly sqliteClass: SqliteSqlClass | null;
-  /** Drizzle column builder factory. */
-  readonly drizzleColumn: SqliteColumnFactory | null;
-  /** Zod base schema (modifiers like min/max applied separately). */
+  readonly sqlite: DialectSlot<SqliteDdl, SqliteColumnFactory>;
+  readonly postgres: DialectSlot<PostgresDdl, PostgresColumnFactory>;
+  readonly mysql: DialectSlot<MysqlDdl, MysqlColumnFactory>;
   readonly zod: ZodFactory;
-  /** When true, the field is virtual — it produces no column in storage. */
   readonly virtual?: boolean;
-  /** Override for the column name (e.g. belongsTo appends `_id`). */
   readonly columnName?: (fieldName: string) => string;
 }
 
@@ -42,33 +67,9 @@ const fileZod: ZodFactory = () =>
     name: z.string().optional(),
   });
 
-const stringText: FieldAdapter = {
-  sqliteClass: 'TEXT',
-  drizzleColumn: (name) => text(name),
-  zod: stringZod,
-};
-
-const numberInt: FieldAdapter = {
-  sqliteClass: 'INTEGER',
-  drizzleColumn: (name) => integer(name),
-  zod: numberZod,
-};
-
-const numberReal: FieldAdapter = {
-  sqliteClass: 'REAL',
-  drizzleColumn: (name) => real(name),
-  zod: numberZod,
-};
-
-const booleanInt: FieldAdapter = {
-  sqliteClass: 'INTEGER',
-  drizzleColumn: (name) => integer(name, { mode: 'boolean' }),
-  zod: () => z.boolean(),
-};
-
 // `z.coerce.date()` silently passes `new Date("not-a-date")` (an Invalid Date
 // object), and Zod's downstream check then emits the confusing
-// "expected date, received Date" error. We build our own schema that accepts
+// "expected date, received Date" error. A custom schema below accepts
 // ISO strings / timestamps / Date instances and fails fast with "Invalid date"
 // on anything `new Date(...)` cannot parse.
 const dateSchema = z.union([z.date(), z.string(), z.number()]).transform((value, ctx) => {
@@ -80,22 +81,67 @@ const dateSchema = z.union([z.date(), z.string(), z.number()]).transform((value,
   return d;
 });
 
-const dateInt: FieldAdapter = {
-  sqliteClass: 'INTEGER',
-  drizzleColumn: (name) => integer(name, { mode: 'timestamp' }),
+const stringText: FieldAdapter = {
+  sqlite: { ddl: 'TEXT', column: (name) => text(name) },
+  postgres: { ddl: 'TEXT', column: (name) => pgText(name) },
+  mysql: { ddl: 'TEXT', column: (name) => mysqlText(name) },
+  zod: stringZod,
+};
+
+const numberInt: FieldAdapter = {
+  sqlite: { ddl: 'INTEGER', column: (name) => integer(name) },
+  postgres: { ddl: 'INTEGER', column: (name) => pgInteger(name) },
+  mysql: { ddl: 'INT', column: (name) => mysqlInt(name) },
+  zod: numberZod,
+};
+
+const numberReal: FieldAdapter = {
+  sqlite: { ddl: 'REAL', column: (name) => real(name) },
+  postgres: { ddl: 'DOUBLE PRECISION', column: (name) => pgDoublePrecision(name) },
+  mysql: { ddl: 'DOUBLE', column: (name) => mysqlDouble(name) },
+  zod: numberZod,
+};
+
+const booleanCol: FieldAdapter = {
+  sqlite: { ddl: 'INTEGER', column: (name) => integer(name, { mode: 'boolean' }) },
+  postgres: { ddl: 'BOOLEAN', column: (name) => pgBoolean(name) },
+  mysql: { ddl: 'TINYINT(1)', column: (name) => mysqlBoolean(name) },
+  zod: () => z.boolean(),
+};
+
+const dateCol: FieldAdapter = {
+  sqlite: { ddl: 'INTEGER', column: (name) => integer(name, { mode: 'timestamp' }) },
+  postgres: {
+    ddl: 'TIMESTAMPTZ',
+    column: (name) => pgTimestamp(name, { withTimezone: true, mode: 'date' }),
+  },
+  mysql: {
+    ddl: 'DATETIME(3)',
+    column: (name) => mysqlDatetime(name, { mode: 'date', fsp: 3 }),
+  },
   zod: () => dateSchema,
 };
 
-const jsonText: FieldAdapter = {
-  sqliteClass: 'TEXT',
-  drizzleColumn: (name) => text(name, { mode: 'json' }),
+const jsonCol: FieldAdapter = {
+  sqlite: { ddl: 'TEXT', column: (name) => text(name, { mode: 'json' }) },
+  postgres: { ddl: 'JSONB', column: (name) => pgJsonb(name) },
+  mysql: { ddl: 'JSON', column: (name) => mysqlJson(name) },
   zod: () => z.unknown(),
 };
 
-const fileJson: FieldAdapter = {
-  sqliteClass: 'TEXT',
-  drizzleColumn: (name) => text(name, { mode: 'json' }),
+const fileCol: FieldAdapter = {
+  sqlite: { ddl: 'TEXT', column: (name) => text(name, { mode: 'json' }) },
+  postgres: { ddl: 'JSONB', column: (name) => pgJsonb(name) },
+  mysql: { ddl: 'JSON', column: (name) => mysqlJson(name) },
   zod: fileZod,
+};
+
+const virtualAdapter: FieldAdapter = {
+  sqlite: { ddl: null, column: null },
+  postgres: { ddl: null, column: null },
+  mysql: { ddl: null, column: null },
+  zod: () => null,
+  virtual: true,
 };
 
 const ADAPTERS: Record<FieldType, FieldAdapter> = {
@@ -122,20 +168,21 @@ const ADAPTERS: Record<FieldType, FieldAdapter> = {
   },
   number: numberInt,
   money: numberReal,
-  boolean: booleanInt,
-  date: dateInt,
-  timestamp: dateInt,
-  json: jsonText,
-  file: fileJson,
-  image: fileJson,
+  boolean: booleanCol,
+  date: dateCol,
+  timestamp: dateCol,
+  json: jsonCol,
+  file: fileCol,
+  image: fileCol,
   belongsTo: {
-    sqliteClass: 'INTEGER',
-    drizzleColumn: (name) => integer(name),
+    sqlite: { ddl: 'INTEGER', column: (name) => integer(name) },
+    postgres: { ddl: 'INTEGER', column: (name) => pgInteger(name) },
+    mysql: { ddl: 'INT', column: (name) => mysqlInt(name) },
     zod: () => z.union([z.number(), z.string()]),
     columnName: (fieldName) => `${fieldName}_id`,
   },
-  hasMany: { sqliteClass: null, drizzleColumn: null, zod: () => null, virtual: true },
-  hasOne: { sqliteClass: null, drizzleColumn: null, zod: () => null, virtual: true },
+  hasMany: virtualAdapter,
+  hasOne: virtualAdapter,
 };
 
 export function adapterFor(type: FieldType): FieldAdapter {

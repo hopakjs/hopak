@@ -12,7 +12,7 @@ interface ErrorBody {
   stack?: string;
 }
 
-const SAFE_INTERNAL_MESSAGE = 'Something went wrong on our side.';
+const SAFE_INTERNAL_MESSAGE = 'Something went wrong on the server.';
 
 function buildSafeBody(
   message: string,

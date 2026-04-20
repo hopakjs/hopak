@@ -1,0 +1,147 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pathExists } from '@hopak/common';
+import { type Dialect, buildDatabaseBlock, detectDialect, patchConfig } from './config-patcher';
+import { patchEnvExample } from './env-patcher';
+import type { UseContext, UseHandler, UseOutcome } from './registry';
+
+export interface DbDialectOptions {
+  dialect: Dialect;
+  /** NPM package shipping the driver (e.g. `postgres`, `mysql2`). `undefined` for sqlite. */
+  driverPkg?: string;
+  driverVersion?: string;
+}
+
+const DESCRIPTIONS: Record<Dialect, string> = {
+  sqlite: 'SQLite via bun:sqlite (default, zero install)',
+  postgres: 'Postgres via postgres.js',
+  mysql: 'MySQL via mysql2',
+};
+
+export function dbDialectHandler(options: DbDialectOptions): UseHandler {
+  const { dialect, driverPkg, driverVersion } = options;
+  return {
+    name: dialect,
+    description: DESCRIPTIONS[dialect],
+
+    async isInstalled(ctx) {
+      const configPath = join(ctx.root, 'hopak.config.ts');
+      if (!(await pathExists(configPath))) return false;
+      const source = await readFile(configPath, 'utf8');
+      return detectDialect(source) === dialect;
+    },
+
+    async install(ctx): Promise<UseOutcome> {
+      const configPath = join(ctx.root, 'hopak.config.ts');
+      if (!(await pathExists(configPath))) {
+        return {
+          status: 'error',
+          message: `hopak.config.ts not found in ${ctx.root}. Run this command inside a Hopak project.`,
+        };
+      }
+
+      const configSource = await readFile(configPath, 'utf8');
+      const patch = patchConfig(configSource, dialect);
+
+      switch (patch.status) {
+        case 'already':
+          return { status: 'already-installed' };
+        case 'conflict':
+          return {
+            status: 'conflict',
+            message: `hopak.config.ts already configures dialect '${patch.current}'. Replace the \`database: { ... }\` block with the snippet below.`,
+            snippet: `${patch.snippet},`,
+          };
+        case 'cant-patch':
+          return {
+            status: 'conflict',
+            message:
+              'Could not safely patch hopak.config.ts — the database block is in an unexpected shape. Paste the snippet into your defineConfig({...}) object.',
+            snippet: `${patch.snippet},`,
+          };
+      }
+
+      // 1. Install the driver (Postgres / MySQL). SQLite ships with Bun.
+      if (driverPkg) {
+        const installed = await installPackage(ctx, driverPkg, driverVersion);
+        if (!installed.ok) {
+          return {
+            status: 'error',
+            message: `Failed to install ${driverPkg}: ${installed.error}. Run manually: bun add ${driverPkg}`,
+          };
+        }
+      }
+
+      // 2. Write the updated config.
+      await writeFile(configPath, patch.updated, 'utf8');
+      ctx.log.info(`Updated hopak.config.ts (database: ${dialect})`);
+
+      // 3. Augment .env.example (Postgres / MySQL only).
+      const envExamplePath = join(ctx.root, '.env.example');
+      if (await pathExists(envExamplePath)) {
+        const envSource = await readFile(envExamplePath, 'utf8');
+        const updated = patchEnvExample(envSource, dialect);
+        if (updated !== null) {
+          await writeFile(envExamplePath, updated, 'utf8');
+          ctx.log.info('Added DATABASE_URL to .env.example');
+        }
+      }
+
+      return { status: 'ok', nextSteps: nextStepsFor(dialect) };
+    },
+  };
+}
+
+function nextStepsFor(dialect: Dialect): string[] {
+  if (dialect === 'sqlite') {
+    return ['hopak dev  (first boot creates the tables automatically)'];
+  }
+  if (dialect === 'postgres') {
+    return [
+      'Start Postgres locally (or use a managed service):',
+      '  docker run -d --name hopak-pg -p 5432:5432 -e POSTGRES_PASSWORD=hopak postgres:16-alpine',
+      'Copy .env.example → .env and set DATABASE_URL',
+      'hopak sync',
+      'hopak dev',
+    ];
+  }
+  return [
+    'Start MySQL locally (or use a managed service):',
+    '  docker run -d --name hopak-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=hopak mysql:8.4',
+    'Copy .env.example → .env and set DATABASE_URL',
+    'hopak sync',
+    'hopak dev',
+  ];
+}
+
+interface InstallResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Run `bun add <pkg>@<version>` in the project root. `bun` is invoked only
+ * with a validated package name and version — no caller-supplied shell text
+ * — so there's no command-injection surface.
+ */
+async function installPackage(
+  ctx: UseContext,
+  pkg: string,
+  version?: string,
+): Promise<InstallResult> {
+  ctx.log.info(`Installing ${pkg}...`);
+  const spec = version ? `${pkg}@${version}` : pkg;
+  const proc = Bun.spawn({
+    cmd: ['bun', 'add', spec],
+    cwd: ctx.root,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  const code = await proc.exited;
+  if (code !== 0) {
+    return { ok: false, error: `exit code ${code}` };
+  }
+  return { ok: true };
+}
+
+export { buildDatabaseBlock };

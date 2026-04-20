@@ -1,12 +1,16 @@
 import { Database as BunDatabase } from 'bun:sqlite';
-import { NotFound } from '@hopak/common';
-import { type AnyColumn, type SQL, and, asc, desc, getTableColumns, sql } from 'drizzle-orm';
 import { type BunSQLiteDatabase, drizzle } from 'drizzle-orm/bun-sqlite';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { ModelDefinition } from '../../model/define';
-import type { Database, FindManyOptions, Id, ModelClient } from '../client';
-import { insertValues, updateSet, whereEq } from './drizzle-bridge';
-import { type SqliteSchema, buildSqliteSchema } from './schema';
+import type { Database, ModelClient } from '../client';
+import type { ResolveClient } from '../include-executor';
+import {
+  AbstractSqlModelClient,
+  type ModelClientDeps,
+  type SqlRunner,
+} from '../sql/abstract-client';
+import { ilikeAsLike } from '../sql/filter-translator';
+import { buildSqliteSchema } from './schema';
 import { syncSqliteSchema } from './sync';
 
 export interface SqliteOptions {
@@ -14,143 +18,109 @@ export interface SqliteOptions {
   file?: string;
 }
 
-class SqliteModelClient<TRow extends Record<string, unknown>> implements ModelClient<TRow> {
-  private readonly columns: Record<string, AnyColumn>;
-
-  constructor(
-    private readonly db: BunSQLiteDatabase,
-    private readonly table: SQLiteTable,
-    private readonly modelName: string,
-  ) {
-    this.columns = getTableColumns(table) as Record<string, AnyColumn>;
-  }
-
-  private columnFor(field: string): AnyColumn {
-    const column = this.columns[field];
-    if (!column) {
-      throw new Error(`Unknown field "${field}" on model "${this.modelName}"`);
-    }
-    return column;
-  }
-
-  private buildWhere(where?: Record<string, unknown>): SQL | undefined {
-    if (!where) return undefined;
-    const conditions = Object.entries(where).map(([key, value]) =>
-      whereEq(this.columnFor(key), value),
-    );
-    if (conditions.length === 0) return undefined;
-    if (conditions.length === 1) return conditions[0];
-    return and(...conditions);
-  }
-
-  async findMany(options: FindManyOptions = {}): Promise<TRow[]> {
-    const where = this.buildWhere(options.where);
-    const orderBy =
-      options.orderBy?.map(({ field, direction }) =>
-        direction === 'desc' ? desc(this.columnFor(field)) : asc(this.columnFor(field)),
-      ) ?? [];
-
-    const base = this.db.select().from(this.table);
-    const filtered = where ? base.where(where) : base;
-    const ordered = orderBy.length > 0 ? filtered.orderBy(...orderBy) : filtered;
-    const limited = options.limit !== undefined ? ordered.limit(options.limit) : ordered;
-    const final = options.offset !== undefined ? limited.offset(options.offset) : limited;
-    return (await final) as TRow[];
-  }
-
-  async findOne(id: Id): Promise<TRow | null> {
-    const rows = await this.db
-      .select()
-      .from(this.table)
-      .where(whereEq(this.columnFor('id'), id))
-      .limit(1);
-    return (rows[0] as TRow | undefined) ?? null;
-  }
-
-  async findOrFail(id: Id): Promise<TRow> {
-    const row = await this.findOne(id);
-    if (!row) throw new NotFound(`${this.modelName} #${id} not found`);
-    return row;
-  }
-
-  async count(options: Pick<FindManyOptions, 'where'> = {}): Promise<number> {
-    const where = this.buildWhere(options.where);
-    const base = this.db.select({ value: sql<number>`count(*)` }).from(this.table);
-    const filtered = where ? base.where(where) : base;
-    const rows = (await filtered) as { value: number }[];
-    return Number(rows[0]?.value ?? 0);
-  }
-
-  async create(data: Partial<TRow>): Promise<TRow> {
-    const inserted = await insertValues(this.db.insert(this.table), data).returning();
-    return inserted[0] as TRow;
-  }
-
-  async update(id: Id, data: Partial<TRow>): Promise<TRow> {
-    const updated = await updateSet(this.db.update(this.table), data)
-      .where(whereEq(this.columnFor('id'), id))
-      .returning();
-    if (!updated[0]) throw new NotFound(`${this.modelName} #${id} not found`);
-    return updated[0] as TRow;
-  }
-
-  async delete(id: Id): Promise<boolean> {
-    const result = await this.db
-      .delete(this.table)
-      .where(whereEq(this.columnFor('id'), id))
-      .returning();
-    return result.length > 0;
+// SQLite inherits the base `upsert` (ON CONFLICT DO UPDATE + RETURNING) and
+// the default write path; only the ilike strategy differs from the base.
+class SqliteModelClient<TRow extends Record<string, unknown>>
+  extends AbstractSqlModelClient<TRow>
+  implements ModelClient<TRow>
+{
+  constructor(db: BunSQLiteDatabase, table: SQLiteTable, modelName: string, deps: ModelClientDeps) {
+    super(db as unknown as SqlRunner, table, modelName, deps, ilikeAsLike);
   }
 }
 
-class SqliteDatabase implements Database {
-  private readonly bun: BunDatabase;
-  private readonly drizzleDb: BunSQLiteDatabase;
-  private readonly schema: SqliteSchema;
-  private readonly tables = new Map<string, SQLiteTable>();
-  private readonly clients = new Map<string, ModelClient<Record<string, unknown>>>();
-  private readonly models: readonly ModelDefinition[];
+/**
+ * `bun` is `null` on a tx-view — a Database returned inside `transaction(fn)`
+ * which shares the connection but isn't allowed to open/close it or start a
+ * nested tx.
+ */
+interface SqliteInternal {
+  bun: BunDatabase | null;
+  drizzleDb: BunSQLiteDatabase;
+  tables: Map<string, SQLiteTable>;
+  models: readonly ModelDefinition[];
+}
 
-  constructor(options: SqliteOptions) {
-    this.bun = new BunDatabase(options.file ?? ':memory:');
-    this.drizzleDb = drizzle(this.bun);
-    this.models = options.models;
-    this.schema = buildSqliteSchema(options.models);
-    for (const model of options.models) {
-      const table = this.schema[model.name];
-      if (table) this.tables.set(model.name, table);
-    }
-  }
+class SqliteDatabase implements Database {
+  private readonly clients = new Map<string, ModelClient<Record<string, unknown>>>();
+
+  constructor(private readonly inner: SqliteInternal) {}
 
   model<TRow extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
   ): ModelClient<TRow> {
     const cached = this.clients.get(name);
     if (cached) return cached as ModelClient<TRow>;
-    const table = this.tables.get(name);
-    if (!table) {
+    const table = this.inner.tables.get(name);
+    const modelDef = this.inner.models.find((m) => m.name === name);
+    if (!table || !modelDef) {
       throw new Error(
         `Model "${name}" is not registered. Create app/models/${name}.ts with a default export, or check that hopak is scanning the right directory.`,
       );
     }
-    const client = new SqliteModelClient<TRow>(this.drizzleDb, table, name);
+    const resolveClient: ResolveClient = (sibling) => this.model(sibling);
+    const client = new SqliteModelClient<TRow>(this.inner.drizzleDb, table, name, {
+      modelDef,
+      allModels: this.inner.models,
+      resolveClient,
+    });
     this.clients.set(name, client as ModelClient<Record<string, unknown>>);
     return client;
   }
 
   raw(): BunSQLiteDatabase {
-    return this.drizzleDb;
+    return this.inner.drizzleDb;
   }
 
   async sync(): Promise<void> {
-    syncSqliteSchema(this.bun, this.models);
+    if (!this.inner.bun) {
+      throw new Error('sync() is not supported inside a transaction. Run migrations first.');
+    }
+    await syncSqliteSchema(this.inner.bun, this.inner.models);
   }
 
   async close(): Promise<void> {
-    this.bun.close();
+    if (this.inner.bun) this.inner.bun.close();
+  }
+
+  /**
+   * bun:sqlite transactions are sync-only at the driver level, so instead of
+   * using Drizzle's `.transaction(fn)` (sync callback only), the user's async
+   * callback is wrapped in raw `BEGIN` / `COMMIT` / `ROLLBACK` statements and
+   * the single connection is shared with the tx view. Nested transactions
+   * aren't supported in 0.1.0 — SAVEPOINTs are accessible via `raw()`.
+   */
+  async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+    if (!this.inner.bun) {
+      throw new Error('Nested transactions are not supported in 0.1.0');
+    }
+    const bun = this.inner.bun;
+    const txDb = new SqliteDatabase({
+      bun: null,
+      drizzleDb: this.inner.drizzleDb,
+      tables: this.inner.tables,
+      models: this.inner.models,
+    });
+    bun.run('BEGIN');
+    try {
+      const result = await fn(txDb);
+      bun.run('COMMIT');
+      return result;
+    } catch (err) {
+      bun.run('ROLLBACK');
+      throw err;
+    }
   }
 }
 
 export function createSqliteDatabase(options: SqliteOptions): Database {
-  return new SqliteDatabase(options);
+  const bun = new BunDatabase(options.file ?? ':memory:');
+  const drizzleDb = drizzle(bun);
+  const schema = buildSqliteSchema(options.models);
+  const tables = new Map<string, SQLiteTable>();
+  for (const model of options.models) {
+    const table = schema[model.name];
+    if (table) tables.set(model.name, table);
+  }
+  return new SqliteDatabase({ bun, drizzleDb, tables, models: options.models });
 }

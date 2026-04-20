@@ -40,6 +40,25 @@ All packages share one version. A release publishes them as a set.
    bunx @biomejs/biome check .
    ```
 
+   The Postgres / MySQL integration suites (`packages/core/test/db-postgres.test.ts`,
+   `db-mysql.test.ts`) are gated on `POSTGRES_URL` / `MYSQL_URL` and skip
+   silently when unset. To run them against a live database:
+
+   ```bash
+   # Postgres
+   POSTGRES_URL=postgres://user:pass@localhost:5432/hopak_test bun test
+
+   # MySQL
+   MYSQL_URL=mysql://user:pass@localhost:3306/hopak_test bun test
+   ```
+
+   The `hopak_test` database must already exist — create it once with
+   `CREATE DATABASE hopak_test`. Tables are dropped automatically between
+   suites so the database can be reused.
+
+   CI runs the full matrix via Postgres + MySQL service containers in
+   `.github/workflows/ci.yml`.
+
 4. **Commit and tag**:
 
    ```bash

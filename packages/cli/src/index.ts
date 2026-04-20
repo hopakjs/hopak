@@ -2,8 +2,9 @@ import { type Logger, createLogger } from '@hopak/common';
 import { runCheck } from './commands/check';
 import { runDev } from './commands/dev';
 import { runGenerate } from './commands/generate';
-import { runMigrate } from './commands/migrate';
 import { runNew } from './commands/new';
+import { runSync } from './commands/sync';
+import { runUse } from './commands/use';
 import { CLI_VERSION } from './version';
 
 const HELP = `Hopak.js CLI v${CLI_VERSION}
@@ -11,11 +12,13 @@ const HELP = `Hopak.js CLI v${CLI_VERSION}
 Usage: hopak <command> [args]
 
 Commands:
-  new <name>              Create a new Hopak project
+  new <name>              Create a new Hopak project (runs bun install)
+    --no-install          Skip dependency install (useful for CI / offline)
   dev                     Start dev server (hot reload)
   generate <kind> <name>  Scaffold a model or route
-  migrate                 Sync database schema (dev)
+  sync                    Apply model schema to the database (CREATE TABLE IF NOT EXISTS)
   check                   Audit project state (config, models, routes)
+  use <capability>        Enable a capability (sqlite, postgres, mysql)
   --help, -h              Show this help
   --version, -v           Show version
 
@@ -24,7 +27,8 @@ Examples:
   hopak dev
   hopak generate model post
   hopak generate route posts/[id]
-  hopak migrate
+  hopak sync
+  hopak use postgres
 `;
 
 interface CommandContext {
@@ -41,12 +45,14 @@ const COMMANDS: Record<string, Command> = {
   new: {
     describe: 'Create a new Hopak project',
     run: ({ args, log }) => {
-      const name = args[0];
+      const positional = args.filter((a) => !a.startsWith('--'));
+      const name = positional[0];
       if (!name) {
-        log.error('Missing project name. Usage: hopak new <name>');
+        log.error('Missing project name. Usage: hopak new <name> [--no-install]');
         return Promise.resolve(1);
       }
-      return runNew({ name, log });
+      const noInstall = args.includes('--no-install');
+      return runNew({ name, log, noInstall });
     },
   },
   dev: {
@@ -64,13 +70,17 @@ const COMMANDS: Record<string, Command> = {
       return runGenerate({ kind, name, log });
     },
   },
-  migrate: {
-    describe: 'Sync database schema (dev)',
-    run: ({ log }) => runMigrate({ log }),
+  sync: {
+    describe: 'Apply model schema to the database',
+    run: ({ log }) => runSync({ log }),
   },
   check: {
     describe: 'Audit project state',
     run: ({ log }) => runCheck({ log }),
+  },
+  use: {
+    describe: 'Enable a capability (sqlite, postgres, mysql)',
+    run: ({ args, log }) => runUse({ name: args[0], log }),
   },
 };
 

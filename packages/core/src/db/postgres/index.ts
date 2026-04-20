@@ -1,9 +1,4 @@
-import { ConfigError } from '@hopak/common';
-import type { Database } from '../client';
-import type { DialectOptions } from '../dialect';
-
-export function createPostgresDatabase(_options: DialectOptions): Database {
-  throw new ConfigError(
-    'Postgres dialect is not yet implemented in MVP. Use SQLite for now: { dialect: "sqlite" }',
-  );
-}
+export { createPostgresDatabase, type PostgresOptions } from './client';
+export { buildPostgresSchema, type PostgresSchema } from './schema';
+export { syncPostgresSchema, buildCreateTableSql } from './sync';
+export { redactUrl } from './driver-loader';

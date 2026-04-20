@@ -14,6 +14,43 @@ jobs:
   verify:
     name: Verify
     runs-on: ubuntu-latest
+
+    # Live Postgres + MySQL containers so the integration suites under
+    # packages/core/test/db-{postgres,mysql}.test.ts exercise real drivers.
+    # The suites `describe.skip` themselves when the env URLs are unset, so
+    # removing a service here silently drops those tests — watch for that.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hopak
+          POSTGRES_PASSWORD: hopak
+          POSTGRES_DB: hopak_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U hopak"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: hopak
+          MYSQL_DATABASE: hopak_test
+          MYSQL_USER: hopak
+          MYSQL_PASSWORD: hopak
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -phopak"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      POSTGRES_URL: postgres://hopak:hopak@localhost:5432/hopak_test
+      MYSQL_URL: mysql://hopak:hopak@localhost:3306/hopak_test
+
     steps:
       - uses: actions/checkout@v4
 
