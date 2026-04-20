@@ -13,6 +13,21 @@ const APP_DIR = 'app';
 const COLD_RESTART_DEBOUNCE_MS = 150;
 
 /**
+ * Only TypeScript / JavaScript sources under `app/` affect routing or
+ * models. Editor artifacts (`.swp`, `.tmp`), test snapshots, and
+ * type-caches can fire `rename` events on save — restarting for those
+ * would thrash the dev loop.
+ */
+const WATCHED_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
+
+function isSourceFile(filename: string | null | Buffer | undefined): boolean {
+  if (!filename) return false;
+  const name = typeof filename === 'string' ? filename : filename.toString('utf8');
+  if (name.startsWith('.') || name.includes('/.')) return false;
+  return WATCHED_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+/**
  * `bun --hot` patches existing modules in place — fast for edits, but it
  * doesn't re-run the top-level scanner, so newly created model or route
  * files are never picked up. We watch `app/` separately and cold-restart
@@ -65,11 +80,12 @@ async function watchForStructuralChanges(
 
   let debounce: ReturnType<typeof setTimeout> | null = null;
   try {
-    return watch(appDir, { recursive: true }, (eventType) => {
+    return watch(appDir, { recursive: true }, (eventType, filename) => {
       // `rename` fires on file creation and deletion on both macOS and
       // Linux (via inotify IN_CREATE / IN_DELETE). `change` is just an
       // edit — we ignore it because `bun --hot` already handles it.
       if (eventType !== 'rename') return;
+      if (!isSourceFile(filename)) return;
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(onChange, COLD_RESTART_DEBOUNCE_MS);
     });
