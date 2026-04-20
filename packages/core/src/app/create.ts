@@ -4,6 +4,7 @@ import { type HopakConfig, type HopakConfigInput, type Logger, createLogger } fr
 import { registerCrudRoutes } from '../crud/register';
 import type { Database } from '../db/client';
 import { createDatabase } from '../db/factory';
+import { translateConnectError } from '../db/sql/connect-translator';
 import { ensureDevCert } from '../http/certs';
 import { loadFileRoutes } from '../http/loader';
 import { Router } from '../http/router';
@@ -61,7 +62,11 @@ async function connectDatabase(config: HopakConfig, registry: ModelRegistry): Pr
     file: config.database.file,
     url: config.database.url,
   });
-  await db.sync();
+  try {
+    await db.sync();
+  } catch (error) {
+    throw translateConnectError(error, config.database.dialect, config.database.url);
+  }
   return db;
 }
 

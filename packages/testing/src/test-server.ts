@@ -1,8 +1,10 @@
 import {
   type Database,
+  type HopakApp,
   type ListeningServer,
   type ModelDefinition,
   Router,
+  createApp,
   createDatabase,
   registerCrudRoutes,
   startServer,
@@ -10,6 +12,12 @@ import {
 import { type JsonClient, createJsonClient } from './json-client';
 
 export interface TestServerOptions {
+  /**
+   * Boot the server exactly like `hopak dev` would — scan models in
+   * `<rootDir>/app/models`, load file routes from `<rootDir>/app/routes`,
+   * register auto-CRUD. Mutually exclusive with `models` / `router`.
+   */
+  rootDir?: string;
   models?: readonly ModelDefinition[];
   router?: Router;
   exposeStack?: boolean;
@@ -29,6 +37,36 @@ export interface TestServer {
 }
 
 export async function createTestServer(options: TestServerOptions = {}): Promise<TestServer> {
+  if (options.rootDir) {
+    return createRootDirServer(options);
+  }
+  return createInMemoryServer(options);
+}
+
+async function createRootDirServer(options: TestServerOptions): Promise<TestServer> {
+  if (options.router || options.models) {
+    throw new Error(
+      '`rootDir` is mutually exclusive with `router` / `models`. Point the test server at a project root, or assemble the router in-memory — not both.',
+    );
+  }
+  const app: HopakApp = await createApp({ rootDir: options.rootDir });
+  const server = await app.listen(0);
+  return {
+    url: server.url,
+    router: app.router,
+    db: app.db,
+    client: createJsonClient(server.url),
+    server,
+    requireDb() {
+      return app.db;
+    },
+    async stop() {
+      await app.stop();
+    },
+  };
+}
+
+async function createInMemoryServer(options: TestServerOptions): Promise<TestServer> {
   const router = options.router ?? new Router();
   const db = options.models ? createDatabase({ dialect: 'sqlite', models: options.models }) : null;
   if (db) await db.sync();
