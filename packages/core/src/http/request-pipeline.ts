@@ -29,8 +29,16 @@ function notFoundResponse(method: string, path: string): Response {
   );
 }
 
-function methodNotAllowedResponse(): Response {
-  return new Response('Method Not Allowed', { status: HttpStatus.MethodNotAllowed });
+function methodNotAllowedResponse(allowed: readonly string[] = []): Response {
+  const headers: Record<string, string> = { 'content-type': 'application/json;charset=utf-8' };
+  if (allowed.length > 0) headers.Allow = allowed.join(', ');
+  return new Response(
+    JSON.stringify({
+      error: 'METHOD_NOT_ALLOWED',
+      message: allowed.length > 0 ? `Allowed methods: ${allowed.join(', ')}` : 'Method Not Allowed',
+    }),
+    { status: HttpStatus.MethodNotAllowed, headers },
+  );
 }
 
 export function createRequestHandler(options: PipelineOptions) {
@@ -71,6 +79,12 @@ export function createRequestHandler(options: PipelineOptions) {
         const staticResponse = await staticHandler.serve(url);
         if (staticResponse) return decorate(req, staticResponse);
       }
+
+      // The path has handlers under other verbs — `405` with an `Allow`
+      // header is the correct surface, not `404`. Browsers and proxies
+      // (CORS preflight, caches) rely on this distinction.
+      const allowed = router.allowedMethods(url.pathname);
+      if (allowed.length > 0) return decorate(req, methodNotAllowedResponse(allowed));
 
       return decorate(req, notFoundResponse(method, url.pathname));
     } catch (cause) {

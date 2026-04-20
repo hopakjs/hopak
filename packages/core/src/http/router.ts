@@ -112,6 +112,22 @@ export class Router {
     return null;
   }
 
+  /**
+   * Methods with at least one handler for the given path. Used by the
+   * pipeline to surface `405 Method Not Allowed` (with an `Allow:` header)
+   * instead of `404` when the URL pattern exists under a different verb.
+   */
+  allowedMethods(path: string): readonly HttpMethod[] {
+    const requestSegments = splitPath(path);
+    const methods = new Set<HttpMethod>();
+    for (const route of this.routes) {
+      if (matchSegments(route.segments, requestSegments) !== null) {
+        methods.add(route.method);
+      }
+    }
+    return [...methods];
+  }
+
   has(method: HttpMethod, pattern: string): boolean {
     return this.routes.some((r) => r.method === method && r.pattern === pattern);
   }

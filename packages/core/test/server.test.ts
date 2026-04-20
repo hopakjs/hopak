@@ -122,6 +122,30 @@ describe('startServer', () => {
     expect(res.body.error).toBe('NOT_FOUND');
   });
 
+  test('returns 405 with Allow header when the path exists under other methods', async () => {
+    const router = new Router();
+    router.add('GET', '/items/[id]', defineRoute({ handler: () => ({ ok: 'get' }) }));
+    router.add('DELETE', '/items/[id]', defineRoute({ handler: () => ({ ok: 'delete' }) }));
+    env = await createTestServer({ router });
+
+    const res = await fetch(`${env.url}/items/42`, { method: 'PATCH' });
+    expect(res.status).toBe(405);
+    const allow = res.headers.get('Allow') ?? '';
+    expect(allow).toContain('GET');
+    expect(allow).toContain('DELETE');
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('METHOD_NOT_ALLOWED');
+  });
+
+  test('still returns 404 when the path has zero handlers across all methods', async () => {
+    const router = new Router();
+    router.add('GET', '/items/[id]', defineRoute({ handler: () => ({}) }));
+    env = await createTestServer({ router });
+
+    const res = await fetch(`${env.url}/different-path`, { method: 'PATCH' });
+    expect(res.status).toBe(404);
+  });
+
   test('HopakError serializes with proper status', async () => {
     const router = new Router();
     router.add(

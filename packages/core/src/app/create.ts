@@ -121,10 +121,12 @@ function resolveListenPort(
 
 export async function createApp(options: CreateAppOptions = {}): Promise<HopakApp> {
   const rootDir = options.rootDir ?? process.cwd();
-  const log = options.log ?? createLogger();
-
+  // Bootstrap with a default-level logger so config-load errors are still
+  // visible, then replace with one honoring `config.logLevel`. Callers who
+  // pass their own logger opt out of config-driven level entirely.
   const config = await resolveConfig(rootDir, options.config);
-  log.debug('Loaded config', { rootDir });
+  const log = options.log ?? createLogger({ level: config.logLevel });
+  log.debug('Loaded config', { rootDir, logLevel: config.logLevel });
 
   const registry = await discoverModels(config, log);
   await ensureWritableDirs(config);
