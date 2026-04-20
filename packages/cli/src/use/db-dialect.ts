@@ -74,7 +74,11 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
 
       // 2. Write the updated config.
       await writeFile(configPath, patch.updated, 'utf8');
-      ctx.log.info(`Updated hopak.config.ts (database: ${dialect})`);
+      if (patch.status === 'replaced') {
+        ctx.log.info(`Replaced database block in hopak.config.ts (${patch.previous} → ${dialect})`);
+      } else {
+        ctx.log.info(`Added database block to hopak.config.ts (dialect: ${dialect})`);
+      }
 
       // 3. Augment .env.example (Postgres / MySQL only).
       const envExamplePath = join(ctx.root, '.env.example');

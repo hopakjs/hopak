@@ -48,16 +48,21 @@ export function projectTemplate(name: string): ProjectTemplate {
       'main.ts': `import { hopak } from '@hopak/core';\n\nawait hopak().listen();\n`,
       'hopak.config.ts': `import { defineConfig } from '@hopak/core';
 
+// Switch dialects with one CLI command — \`hopak use\` rewrites this block:
+//   hopak use postgres
+//   hopak use mysql
+//
+// Enable HTTPS in dev — a self-signed cert is generated on first boot:
+//   server: { https: { enabled: true, port: 3443 } },
+
 export default defineConfig({
   server: { port: 3000 },
   database: { dialect: 'sqlite', file: '.hopak/data.db' },
-  // Enable HTTPS in dev — a self-signed cert is generated on first boot:
-  // server: { https: { enabled: true, port: 3443 } },
 });
 `,
       '.gitignore': 'node_modules\n.hopak\n*.log\n.env\n.env.local\n',
       '.env.example': '# Add secrets here\n',
-      'README.md': `# ${name}\n\nBuilt with Hopak.js.\n\n## Run\n\n\`\`\`bash\nbun install\nhopak dev\n\`\`\`\n`,
+      'README.md': `# ${name}\n\nBuilt with Hopak.js.\n\n## Run\n\n\`\`\`bash\nhopak dev\n\`\`\`\n`,
       'app/models/post.ts': `import { model, text, boolean } from '@hopak/core';
 
 export default model(

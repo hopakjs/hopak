@@ -72,13 +72,71 @@ describe('config-patcher — patchConfig', () => {
     expect(result.status).toBe('already');
   });
 
-  test('reports conflict when switching dialects on an existing block', () => {
+  test('replaces the template default sqlite block with postgres', () => {
     const result = patchConfig(CONFIG_WITH_SQLITE, 'postgres');
+    expect(result.status).toBe('replaced');
+    if (result.status === 'replaced') {
+      expect(result.previous).toBe('sqlite');
+      expect(result.updated).toContain(
+        "database: { dialect: 'postgres', url: process.env.DATABASE_URL }",
+      );
+      expect(result.updated).not.toContain("'sqlite'");
+    }
+  });
+
+  test('replaces the default postgres block with mysql', () => {
+    const defaultPg = `import { defineConfig } from '@hopak/core';
+export default defineConfig({
+  server: { port: 3000 },
+  database: { dialect: 'postgres', url: process.env.DATABASE_URL },
+});
+`;
+    const result = patchConfig(defaultPg, 'mysql');
+    expect(result.status).toBe('replaced');
+    if (result.status === 'replaced') {
+      expect(result.previous).toBe('postgres');
+      expect(result.updated).toContain(
+        "database: { dialect: 'mysql', url: process.env.DATABASE_URL }",
+      );
+    }
+  });
+
+  test('refuses to overwrite a tuned sqlite block (custom file path)', () => {
+    const tuned = `import { defineConfig } from '@hopak/core';
+export default defineConfig({
+  database: { dialect: 'sqlite', file: 'custom/my-app.db' },
+});
+`;
+    const result = patchConfig(tuned, 'postgres');
     expect(result.status).toBe('conflict');
     if (result.status === 'conflict') {
       expect(result.current).toBe('sqlite');
       expect(result.snippet).toContain('postgres');
     }
+  });
+
+  test('refuses to overwrite a tuned postgres block (extra keys)', () => {
+    const tuned = `import { defineConfig } from '@hopak/core';
+export default defineConfig({
+  database: {
+    dialect: 'postgres',
+    url: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  },
+});
+`;
+    const result = patchConfig(tuned, 'mysql');
+    expect(result.status).toBe('conflict');
+  });
+
+  test('treats a bare `{ dialect: "sqlite" }` as replaceable default', () => {
+    const bare = `import { defineConfig } from '@hopak/core';
+export default defineConfig({
+  database: { dialect: 'sqlite' },
+});
+`;
+    const result = patchConfig(bare, 'postgres');
+    expect(result.status).toBe('replaced');
   });
 
   test('inserts a database block when missing, before the defineConfig close', () => {
