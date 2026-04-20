@@ -1,5 +1,5 @@
 import { relative } from 'node:path';
-import { type Logger, pathExists } from '@hopak/common';
+import { HopakError, type Logger, pathExists } from '@hopak/common';
 import {
   ModelRegistry,
   Router,
@@ -56,9 +56,24 @@ interface CheckOutcome {
 
 export async function runCheck(options: CheckCommandOptions): Promise<number> {
   const cwd = options.cwd ?? process.cwd();
-  const outcome = await collectChecks(cwd);
-  process.stdout.write(format(outcome.lines));
-  return outcome.failed ? 1 : 0;
+  try {
+    const outcome = await collectChecks(cwd);
+    process.stdout.write(format(outcome.lines));
+    return outcome.failed ? 1 : 0;
+  } catch (error) {
+    // `hopak check` is meant to be the friendliest diagnostic command —
+    // a raw driver / config stack trace here defeats the purpose. Any
+    // `HopakError` thrown while collecting checks becomes a single
+    // formatted line so the user sees what to fix.
+    if (error instanceof HopakError) {
+      process.stdout.write(
+        format([{ ok: false, label: 'Config', detail: error.message.split('\n')[0] ?? '' }]),
+      );
+      process.stdout.write(`\n  ${error.message}\n\n`);
+      return 1;
+    }
+    throw error;
+  }
 }
 
 async function collectChecks(cwd: string): Promise<CheckOutcome> {
