@@ -1,6 +1,6 @@
 {
   "name": "@hopak/testing",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Test helpers for Hopak.js — test server, JSON client.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",

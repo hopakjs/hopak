@@ -42,6 +42,7 @@ import {
   updateSet,
   whereEq,
 } from './drizzle-bridge';
+import { withUniqueToConflict } from './error-translator';
 import { type IlikeStrategy, translateWhere } from './filter-translator';
 
 /**
@@ -312,26 +313,30 @@ export abstract class AbstractSqlModelClient<TRow extends Record<string, unknown
   // MySQL subclass overrides all of these to use a 2-step fetch.
 
   async create(data: Partial<TRow>): Promise<TRow> {
-    const builder = insertValues(this.db.insert(this.table), data);
-    const returning = builder.returning?.bind(builder);
-    if (!returning) {
-      throw new Error('returning() unavailable — subclass must override create()');
-    }
-    const rows = (await returning()) as TRow[];
-    return rows[0] as TRow;
+    return withUniqueToConflict(async () => {
+      const builder = insertValues(this.db.insert(this.table), data);
+      const returning = builder.returning?.bind(builder);
+      if (!returning) {
+        throw new Error('returning() unavailable — subclass must override create()');
+      }
+      const rows = (await returning()) as TRow[];
+      return rows[0] as TRow;
+    });
   }
 
   async update(id: Id, data: Partial<TRow>): Promise<TRow> {
-    const builder = updateSet(this.db.update(this.table), data).where(
-      whereEq(this.columnFor('id'), id),
-    );
-    const returning = builder.returning?.bind(builder);
-    if (!returning) {
-      throw new Error('returning() unavailable — subclass must override update()');
-    }
-    const rows = (await returning()) as TRow[];
-    if (!rows[0]) throw new NotFound(`${this.modelName} #${id} not found`);
-    return rows[0];
+    return withUniqueToConflict(async () => {
+      const builder = updateSet(this.db.update(this.table), data).where(
+        whereEq(this.columnFor('id'), id),
+      );
+      const returning = builder.returning?.bind(builder);
+      if (!returning) {
+        throw new Error('returning() unavailable — subclass must override update()');
+      }
+      const rows = (await returning()) as TRow[];
+      if (!rows[0]) throw new NotFound(`${this.modelName} #${id} not found`);
+      return rows[0];
+    });
   }
 
   async delete(id: Id): Promise<boolean> {
@@ -346,25 +351,29 @@ export abstract class AbstractSqlModelClient<TRow extends Record<string, unknown
 
   async createMany(data: Partial<TRow>[]): Promise<BatchResult> {
     if (data.length === 0) return { count: 0 };
-    const builder = insertValues(this.db.insert(this.table), data);
-    const returning = builder.returning?.bind(builder);
-    if (!returning) {
-      throw new Error('returning() unavailable — subclass must override createMany()');
-    }
-    const rows = await returning();
-    return { count: rows.length };
+    return withUniqueToConflict(async () => {
+      const builder = insertValues(this.db.insert(this.table), data);
+      const returning = builder.returning?.bind(builder);
+      if (!returning) {
+        throw new Error('returning() unavailable — subclass must override createMany()');
+      }
+      const rows = await returning();
+      return { count: rows.length };
+    });
   }
 
   async updateMany(options: UpdateManyOptions<TRow>): Promise<BatchResult> {
-    const where = this.buildWhere(options.where);
-    const base = updateSet(this.db.update(this.table), options.data);
-    const filtered = where ? base.where(where) : base;
-    const returning = filtered.returning?.bind(filtered);
-    if (!returning) {
-      throw new Error('returning() unavailable — subclass must override updateMany()');
-    }
-    const rows = await returning();
-    return { count: rows.length };
+    return withUniqueToConflict(async () => {
+      const where = this.buildWhere(options.where);
+      const base = updateSet(this.db.update(this.table), options.data);
+      const filtered = where ? base.where(where) : base;
+      const returning = filtered.returning?.bind(filtered);
+      if (!returning) {
+        throw new Error('returning() unavailable — subclass must override updateMany()');
+      }
+      const rows = await returning();
+      return { count: rows.length };
+    });
   }
 
   async deleteMany(options: DeleteManyOptions<TRow>): Promise<BatchResult> {

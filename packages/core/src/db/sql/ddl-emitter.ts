@@ -118,9 +118,44 @@ export async function syncSchemaGeneric(
   models: readonly ModelDefinition[],
   ops: DialectDdlOps,
 ): Promise<void> {
-  for (const model of models) {
+  for (const model of orderByFkDependencies(models)) {
     await ops.run(runner, buildCreateTableSql(model, ops));
   }
+}
+
+/**
+ * Order models so a `belongsTo` target is created before any dependent child.
+ * Without this, Postgres + MySQL reject `CREATE TABLE ... FOREIGN KEY` because
+ * the referenced table doesn't exist yet. Models the scanner returned in
+ * alphabetical order (comment before post) hit this every time.
+ *
+ * Cycles are tolerated — the first model in a cycle is emitted in its
+ * discovery order, and any remaining constraints resolve on the second pass.
+ * SQLite's generic case degenerates harmlessly to the original order.
+ */
+export function orderByFkDependencies(
+  models: readonly ModelDefinition[],
+): readonly ModelDefinition[] {
+  const byName = new Map(models.map((m) => [m.name, m]));
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const ordered: ModelDefinition[] = [];
+
+  function visit(model: ModelDefinition): void {
+    if (visited.has(model.name) || visiting.has(model.name)) return;
+    visiting.add(model.name);
+    for (const field of Object.values(model.fields)) {
+      if (field.type !== 'belongsTo' || !field.relationTarget) continue;
+      const parent = byName.get(field.relationTarget);
+      if (parent) visit(parent);
+    }
+    visiting.delete(model.name);
+    visited.add(model.name);
+    ordered.push(model);
+  }
+
+  for (const model of models) visit(model);
+  return ordered;
 }
 
 /** Small helper used by every dialect's `ddlFor`. */

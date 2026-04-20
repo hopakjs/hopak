@@ -65,16 +65,34 @@ export async function executeInclude(
 
     const nested: IncludeRelationOptions = rawOpts === true ? {} : rawOpts;
     const targetClient = resolveClient(targetName);
+    const excluded = sensitiveFieldsOf(targetModel);
 
     if (field.type === 'belongsTo') {
-      await loadBelongsTo(relationName, primaryRows, targetClient, nested);
+      await loadBelongsTo(relationName, primaryRows, targetClient, nested, excluded);
     } else {
       const fkField = findInverseBelongsTo(targetModel, primaryModel.name, relationName);
       if (field.type === 'hasMany') {
-        await loadHasMany(relationName, fkField, primaryRows, targetClient, nested);
+        await loadHasMany(relationName, fkField, primaryRows, targetClient, nested, excluded);
       } else {
-        await loadHasOne(relationName, fkField, primaryRows, targetClient, nested);
+        await loadHasOne(relationName, fkField, primaryRows, targetClient, nested, excluded);
       }
+    }
+  }
+}
+
+function sensitiveFieldsOf(model: ModelDefinition): ReadonlySet<string> {
+  const set = new Set<string>();
+  for (const [name, field] of Object.entries(model.fields)) {
+    if (field.excludeFromJson) set.add(name);
+  }
+  return set;
+}
+
+function stripSensitiveInPlace(rows: MutableRow[], excluded: ReadonlySet<string>): void {
+  if (excluded.size === 0) return;
+  for (const row of rows) {
+    for (const key of excluded) {
+      if (key in row) delete row[key];
     }
   }
 }
@@ -84,6 +102,7 @@ async function loadBelongsTo(
   primaryRows: MutableRow[],
   targetClient: ModelClient,
   nested: IncludeRelationOptions,
+  excluded: ReadonlySet<string>,
 ): Promise<void> {
   const fkValues = new Set<unknown>();
   for (const row of primaryRows) {
@@ -99,6 +118,7 @@ async function loadBelongsTo(
   const where = mergeWhere({ id: { in: Array.from(fkValues) } }, nested.where);
   const options: FindManyOptions = { ...nested, where };
   const parents = (await targetClient.findMany(options)) as MutableRow[];
+  stripSensitiveInPlace(parents, excluded);
 
   const index = new Map<unknown, MutableRow>();
   for (const parent of parents) index.set(parent.id, parent);
@@ -115,6 +135,7 @@ async function loadHasMany(
   primaryRows: MutableRow[],
   targetClient: ModelClient,
   nested: IncludeRelationOptions,
+  excluded: ReadonlySet<string>,
 ): Promise<void> {
   const primaryIds = collectIds(primaryRows);
   if (primaryIds.length === 0) {
@@ -125,6 +146,7 @@ async function loadHasMany(
   const where = mergeWhere({ [fkField]: { in: primaryIds } }, nested.where);
   const options: FindManyOptions = { ...nested, where };
   const children = (await targetClient.findMany(options)) as MutableRow[];
+  stripSensitiveInPlace(children, excluded);
 
   const groups = new Map<unknown, MutableRow[]>();
   for (const child of children) {
@@ -148,6 +170,7 @@ async function loadHasOne(
   primaryRows: MutableRow[],
   targetClient: ModelClient,
   nested: IncludeRelationOptions,
+  excluded: ReadonlySet<string>,
 ): Promise<void> {
   const primaryIds = collectIds(primaryRows);
   if (primaryIds.length === 0) {
@@ -158,6 +181,7 @@ async function loadHasOne(
   const where = mergeWhere({ [fkField]: { in: primaryIds } }, nested.where);
   const options: FindManyOptions = { ...nested, where };
   const children = (await targetClient.findMany(options)) as MutableRow[];
+  stripSensitiveInPlace(children, excluded);
 
   const index = new Map<unknown, MutableRow>();
   for (const child of children) {

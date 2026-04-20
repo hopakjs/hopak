@@ -25,6 +25,7 @@ import {
   updateSet,
   whereEq,
 } from '../sql/drizzle-bridge';
+import { withUniqueToConflict } from '../sql/error-translator';
 import { ilikeAsLike } from '../sql/filter-translator';
 import { type MysqlPool, loadDrizzleMysqlAdapter, loadMysqlDriver } from './driver-loader';
 import { buildMysqlSchema } from './schema';
@@ -60,20 +61,24 @@ class MysqlModelClient<TRow extends Record<string, unknown>>
   }
 
   override async create(data: Partial<TRow>): Promise<TRow> {
-    const result = await insertValues(this.db.insert(this.table), data);
-    const header = unpackHeader<MysqlInsertHeader>(result);
-    return this.findOrFail(header.insertId);
+    return withUniqueToConflict(async () => {
+      const result = await insertValues(this.db.insert(this.table), data);
+      const header = unpackHeader<MysqlInsertHeader>(result);
+      return this.findOrFail(header.insertId);
+    });
   }
 
   override async update(id: Id, data: Partial<TRow>): Promise<TRow> {
-    const result = await updateSet(this.db.update(this.table), data).where(
-      whereEq(this.columnFor('id'), id),
-    );
-    const header = unpackHeader<MysqlUpdateHeader>(result);
-    if (header.affectedRows === 0) {
-      throw new NotFound(`${this.modelName} #${id} not found`);
-    }
-    return this.findOrFail(id);
+    return withUniqueToConflict(async () => {
+      const result = await updateSet(this.db.update(this.table), data).where(
+        whereEq(this.columnFor('id'), id),
+      );
+      const header = unpackHeader<MysqlUpdateHeader>(result);
+      if (header.affectedRows === 0) {
+        throw new NotFound(`${this.modelName} #${id} not found`);
+      }
+      return this.findOrFail(id);
+    });
   }
 
   override async delete(id: Id): Promise<boolean> {
@@ -100,17 +105,21 @@ class MysqlModelClient<TRow extends Record<string, unknown>>
 
   override async createMany(data: Partial<TRow>[]): Promise<BatchResult> {
     if (data.length === 0) return { count: 0 };
-    const result = await insertValues(this.db.insert(this.table), data);
-    const header = unpackHeader<MysqlUpdateHeader>(result);
-    return { count: header.affectedRows };
+    return withUniqueToConflict(async () => {
+      const result = await insertValues(this.db.insert(this.table), data);
+      const header = unpackHeader<MysqlUpdateHeader>(result);
+      return { count: header.affectedRows };
+    });
   }
 
   override async updateMany(options: UpdateManyOptions<TRow>): Promise<BatchResult> {
-    const where = this.buildWhere(options.where);
-    const base = updateSet(this.db.update(this.table), options.data);
-    const filtered = where ? base.where(where) : base;
-    const header = unpackHeader<MysqlUpdateHeader>(await filtered);
-    return { count: header.affectedRows };
+    return withUniqueToConflict(async () => {
+      const where = this.buildWhere(options.where);
+      const base = updateSet(this.db.update(this.table), options.data);
+      const filtered = where ? base.where(where) : base;
+      const header = unpackHeader<MysqlUpdateHeader>(await filtered);
+      return { count: header.affectedRows };
+    });
   }
 
   override async deleteMany(options: DeleteManyOptions<TRow>): Promise<BatchResult> {
