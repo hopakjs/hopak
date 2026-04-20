@@ -3,9 +3,6 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to publish (e.g. 0.0.2). Must match all package.json versions.'
-        required: true
       dry-run:
         description: 'Dry-run only (no publish)'
         type: boolean
@@ -17,6 +14,19 @@ on:
 concurrency:
   group: release
   cancel-in-progress: false
+
+# Independent versioning:
+#   Each package under `packages/` has its own version. A release event
+#   (tag push) inspects every package.json and publishes only the ones
+#   whose version is ahead of what's already on npm. Packages that didn't
+#   change between releases are skipped — no empty bumps, no duplicate
+#   publishes. Transitive updates rely on caret ranges (`^0.1.5`) in the
+#   resolved package.json dependencies, so a newer shared dep (e.g.
+#   @hopak/common) is picked up by downstream packages without
+#   republishing them.
+#
+# The single `v<semver>` tag is kept as a release marker for humans —
+# it's not enforced to match any specific package version anymore.
 
 jobs:
   verify:
@@ -42,26 +52,30 @@ jobs:
       - name: Test
         run: bun test
 
-      - name: Check versions match
-        env:
-          EVENT: ${{ github.event_name }}
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
+      - name: Detect packages to publish
         run: |
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            EXPECTED="$INPUT_VERSION"
-          else
-            EXPECTED="${REF_NAME#v}"
-          fi
-          echo "Expected version: $EXPECTED"
-          for pkg in packages/*/package.json; do
-            ACTUAL=$(jq -r .version "$pkg")
-            NAME=$(jq -r .name "$pkg")
-            if [ "$ACTUAL" != "$EXPECTED" ]; then
-              echo "::error file=$pkg::$NAME version $ACTUAL does not match $EXPECTED"
-              exit 1
+          set -euo pipefail
+          echo "Package status vs. npm:"
+          printf '%-20s %-10s %-10s %s\n' 'name' 'local' 'remote' 'action'
+          for pkg in packages/common packages/core packages/testing packages/cli; do
+            NAME=$(jq -r .name "$pkg/package.json")
+            LOCAL=$(jq -r .version "$pkg/package.json")
+            REMOTE=$(npm view "$NAME" version 2>/dev/null || echo "-")
+            if [ "$LOCAL" = "$REMOTE" ]; then
+              ACTION="skip (up to date)"
+            elif [ "$REMOTE" = "-" ]; then
+              ACTION="publish (first release)"
+            else
+              # Guard against regressions: refuse to publish a lower
+              # version than what's already on npm.
+              HIGHER=$(printf '%s\n%s\n' "$LOCAL" "$REMOTE" | sort -V | tail -1)
+              if [ "$HIGHER" != "$LOCAL" ]; then
+                echo "::error::$NAME: local $LOCAL is behind npm $REMOTE. Bump it or revert."
+                exit 1
+              fi
+              ACTION="publish ($REMOTE -> $LOCAL)"
             fi
-            echo "Verified $NAME @ $ACTUAL"
+            printf '%-20s %-10s %-10s %s\n' "$NAME" "$LOCAL" "$REMOTE" "$ACTION"
           done
 
   publish:
@@ -89,49 +103,65 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Resolve workspace:* to semver
-        env:
-          EVENT: ${{ github.event_name }}
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
+      - name: Resolve workspace:* to each dep's current version
         run: |
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            VERSION="$INPUT_VERSION"
-          else
-            VERSION="${REF_NAME#v}"
-          fi
-          SEMVER="^$VERSION"
-          echo "Rewriting workspace:* to $SEMVER"
+          set -euo pipefail
+          # Build a name -> local-version map.
+          declare -A LOCAL_VERSIONS
           for pkg in packages/*/package.json; do
-            NAME=$(jq -r .name "$pkg")
-            jq --arg v "$SEMVER" '
-              if .dependencies then .dependencies |= with_entries(
-                if .value == "workspace:*" then .value = $v else . end
-              ) else . end
-              |
-              if .devDependencies then .devDependencies |= with_entries(
-                if .value == "workspace:*" then .value = $v else . end
-              ) else . end
-              |
-              if .peerDependencies then .peerDependencies |= with_entries(
-                if .value == "workspace:*" then .value = $v else . end
-              ) else . end
-            ' "$pkg" > "$pkg.tmp" && mv "$pkg.tmp" "$pkg"
-            echo "--- $NAME ---"
+            N=$(jq -r .name "$pkg")
+            V=$(jq -r .version "$pkg")
+            LOCAL_VERSIONS[$N]=$V
+          done
+          # Rewrite each workspace:* to `^<current version of that package>`
+          # so downstream packages on npm pin to an exact semver range.
+          for pkg in packages/*/package.json; do
+            echo "--- resolving $(jq -r .name "$pkg") ---"
+            TMP="$pkg.tmp"
+            cp "$pkg" "$TMP"
+            for dep in "${!LOCAL_VERSIONS[@]}"; do
+              RANGE="^${LOCAL_VERSIONS[$dep]}"
+              jq --arg n "$dep" --arg v "$RANGE" '
+                (.dependencies     // {}) as $d |
+                (.devDependencies  // {}) as $dd |
+                (.peerDependencies // {}) as $pd |
+                .dependencies     = ($d     | with_entries(if .key == $n and .value == "workspace:*" then .value = $v else . end)) |
+                .devDependencies  = ($dd    | with_entries(if .key == $n and .value == "workspace:*" then .value = $v else . end)) |
+                .peerDependencies = ($pd    | with_entries(if .key == $n and .value == "workspace:*" then .value = $v else . end))
+              ' "$TMP" > "$TMP.next" && mv "$TMP.next" "$TMP"
+            done
+            mv "$TMP" "$pkg"
             jq '{dependencies, devDependencies, peerDependencies}' "$pkg"
           done
 
-      - name: Publish packages
+      - name: Publish changed packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           DRY_RUN: ${{ github.event.inputs.dry-run }}
         run: |
+          set -euo pipefail
           PUBLISH_FLAGS="--access public --provenance"
-          if [ "$DRY_RUN" = "true" ]; then
+          if [ "${DRY_RUN:-false}" = "true" ]; then
             PUBLISH_FLAGS="$PUBLISH_FLAGS --dry-run"
             echo "Running in dry-run mode"
           fi
+          PUBLISHED=0
+          SKIPPED=0
+          # Order matters: common before core before {testing, cli} so that
+          # a dependent published in the same run pulls a just-published
+          # dep from npm rather than 404'ing.
           for pkg in packages/common packages/core packages/testing packages/cli; do
-            echo "Publishing $pkg..."
+            NAME=$(jq -r .name "$pkg/package.json")
+            LOCAL=$(jq -r .version "$pkg/package.json")
+            REMOTE=$(npm view "$NAME" version 2>/dev/null || echo "-")
+            if [ "$LOCAL" = "$REMOTE" ]; then
+              echo ">> Skipping $NAME@$LOCAL (already on npm)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+            echo ">> Publishing $NAME@$LOCAL (was $REMOTE)"
             (cd "$pkg" && npm publish $PUBLISH_FLAGS)
+            PUBLISHED=$((PUBLISHED + 1))
           done
+          echo ""
+          echo "Release summary: $PUBLISHED published, $SKIPPED skipped."

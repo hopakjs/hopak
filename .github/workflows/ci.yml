@@ -53,6 +53,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need the parent commit to diff `package.json` version bumps against.
+          fetch-depth: 2
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -70,3 +73,42 @@ jobs:
 
       - name: Test
         run: bun test
+
+      - name: Guard against no-op version bumps
+        # Independent versioning only works if version bumps reflect real
+        # changes. This step warns when a package.json version changed in
+        # the current commit but no corresponding `src/` file did, unless
+        # another package in the same commit also bumped — that case
+        # represents a transitive bump to stay aligned with a dep and is
+        # intentionally allowed.
+        run: |
+          set -euo pipefail
+          if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+            echo "No parent commit — skipping version-bump guard."
+            exit 0
+          fi
+          BUMPED=()
+          for pkg in packages/*/; do
+            PJ="${pkg}package.json"
+            [ -f "$PJ" ] || continue
+            NEW=$(jq -r .version "$PJ")
+            OLD=$(git show HEAD^:"$PJ" 2>/dev/null | jq -r .version 2>/dev/null || echo "")
+            if [ -n "$OLD" ] && [ "$NEW" != "$OLD" ]; then
+              BUMPED+=("$pkg")
+            fi
+          done
+          if [ ${#BUMPED[@]} -eq 0 ]; then
+            echo "No version bumps in this commit."
+            exit 0
+          fi
+          # If more than one package bumped in the same commit, assume a
+          # coordinated transitive bump and allow it.
+          if [ ${#BUMPED[@]} -gt 1 ]; then
+            echo "Multiple packages bumped (${BUMPED[*]}) — treating as coordinated release."
+            exit 0
+          fi
+          SOLO="${BUMPED[0]}"
+          SRC_CHANGED=$(git diff --name-only HEAD^ HEAD -- "${SOLO}src/" | wc -l | tr -d ' ')
+          if [ "$SRC_CHANGED" = "0" ]; then
+            echo "::warning::Version bumped in $SOLO with no src/ changes. Either revert the bump or include the change that justifies it."
+          fi
