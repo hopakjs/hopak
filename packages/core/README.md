@@ -14,8 +14,23 @@
   <a href="#cors">CORS</a> ·
   <a href="#https">HTTPS</a> ·
   <a href="#configuration">Config</a> ·
-  <a href="#cli">CLI</a>
+  <a href="#cli">CLI</a> ·
+  <a href="#upgrading-from-01x">Upgrading</a>
 </p>
+
+## Upgrading from 0.1.x
+
+0.2 is a breaking release. If you had `{ crud: true }` on any model,
+run `hopak generate crud <name>` once per model and then drop the
+flag — the CLI scaffolds the six route files the runtime used to
+inject at boot. If you had `server.https.enabled: true`, run
+`hopak generate cert` once; boot no longer shells out to openssl
+for you. `@hopak/testing`'s `withCrud` option went with the same
+change — wire routes via the new `crud.*` helpers, or point
+`createTestServer` at a project `rootDir`. Nothing else in the
+public surface moved; models, queries, validation, errors, CORS,
+`hopak use`, `hopak sync`, and `hopak check` all keep working the
+way they did.
 
 ## Quick start
 

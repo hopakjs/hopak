@@ -14,8 +14,56 @@
   <a href="#cors">CORS</a> ·
   <a href="#https">HTTPS</a> ·
   <a href="#configuration">Config</a> ·
-  <a href="#cli">CLI</a>
+  <a href="#cli">CLI</a> ·
+  <a href="#upgrading-from-01x">Upgrading</a>
 </p>
+
+## Upgrading from 0.1.x
+
+`@hopak/core@0.2.0` is a **breaking** release. The change in spirit:
+nothing materializes at runtime from a declaration any more — CRUD
+endpoints and dev certs are scaffolded by the CLI, the runtime just
+executes whatever is in your files.
+
+**What to do if you're on 0.1.x:**
+
+1. Upgrade the CLI: `bun add -g @hopak/cli@latest`.
+2. Upgrade the framework: `bun add @hopak/core@latest @hopak/testing@latest` in your project.
+3. For every model that had `{ crud: true }`, run once:
+   ```bash
+   hopak generate crud <model-name>
+   ```
+   That writes `app/routes/api/<plural>.ts` and
+   `app/routes/api/<plural>/[id].ts` with the same six verbs the
+   runtime used to inject. Remove `{ crud: true }` from the model
+   file (it's just a type error now, no behavioral effect):
+   ```ts
+   // before
+   export default model('post', { ... }, { crud: true });
+   // after
+   export default model('post', { ... });
+   ```
+4. If you had `server.https.enabled: true`, run `hopak generate cert`
+   once. Boot no longer calls openssl behind your back — if the cert
+   files aren't there, `hopak dev` fails fast with a pointer to this
+   command.
+5. If you used `@hopak/testing`'s `createTestServer({ withCrud: true })`,
+   switch to wiring routes via the new `crud.*` helpers (or pass
+   `rootDir` to test the project end-to-end). See `@hopak/testing`'s
+   README.
+
+**Also removed** (they existed on the type but were never wired to
+anything — deleting is mechanical):
+
+- `ModelOptions.owner`
+- `ModelOptions.publicRead`
+- `ModelOptions.auth`
+- `ModelOptions.softDelete`
+
+Nothing else in the public surface changed — models, relations,
+query ergonomics, validation, serialization, errors, HTTPS / CORS
+config, `hopak use`, `hopak sync`, `hopak check` all behave exactly
+as before.
 
 ## Quick start
 
