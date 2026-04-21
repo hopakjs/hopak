@@ -262,11 +262,17 @@ So there are two response shapes to expect from a create call:
 
 #### Validate in a custom route
 
-When writing your own handler, validate with the same schema the CRUD uses:
+When writing your own handler, validate with the same schema the CRUD helpers use:
 
 ```ts
 // app/routes/api/signup.ts
-import { defineRoute, buildModelSchema, validate, ValidationError } from '@hopak/core';
+import {
+  buildModelSchema,
+  defineRoute,
+  serializeForResponse,
+  validate,
+  ValidationError,
+} from '@hopak/core';
 import user from '../../models/user';
 
 const schema = buildModelSchema(user, { omitId: true });
@@ -277,13 +283,24 @@ export const POST = defineRoute({
     if (!result.ok) {
       throw new ValidationError('Invalid signup', result.errors);
     }
-    // result.data is fully typed from the model
-    return ctx.db?.model('user').create(result.data);
+    const row = await ctx.db!.model('user').create(result.data);
+    // `serializeForResponse` strips `password` / `secret` / `token`
+    // columns. The `crud.*` helpers do this automatically; a hand-
+    // written handler has to call it explicitly or the hash leaks.
+    return serializeForResponse(row, user);
   },
 });
 ```
 
-`buildModelSchema(model, { partial: true })` gives the `PATCH`-flavoured schema. `result.errors` is `Record<field, string[]>` — the same shape CRUD sends back.
+`buildModelSchema(model, { partial: true })` gives the `PATCH`-flavoured schema. `result.errors` is `Record<field, string[]>` — the same shape the CRUD helpers send back.
+
+> **Sensitive fields in custom routes:** `password()`, `secret()`,
+> and `token()` are stripped by the serializer, and `crud.list` /
+> `crud.create` / etc. pass every row through it. A custom handler
+> that returns a model row directly — `return ctx.db!.model('user')
+> .findOne(id)` — skips that step, and the DB column (argon2 hash,
+> API key, etc.) lands in the response. Always wrap the row in
+> `serializeForResponse(row, model)` before returning.
 
 #### Throw your own field errors
 
