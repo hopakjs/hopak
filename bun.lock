@@ -25,17 +25,17 @@
       "version": "0.1.0",
       "devDependencies": {
         "@hopak/testing": "workspace:*",
-        "jose": "^5.6.0",
+        "jose": "^6.0.0",
       },
       "peerDependencies": {
         "@hopak/common": "workspace:*",
         "@hopak/core": "workspace:*",
-        "jose": "^5.6.0",
+        "jose": "^5.6.0 || ^6.0.0",
       },
     },
     "packages/cli": {
       "name": "@hopak/cli",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "bin": {
         "hopak": "./src/bin.ts",
       },
@@ -50,7 +50,7 @@
     },
     "packages/core": {
       "name": "@hopak/core",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@hopak/common": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -72,7 +72,7 @@
     },
     "packages/testing": {
       "name": "@hopak/testing",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@hopak/common": "workspace:*",
         "@hopak/core": "workspace:*",
@@ -140,7 +140,7 @@
 
     "is-property": ["is-property@1.0.2", "", {}, "sha512-Ks/IoX00TtClbGQr4TWXemAnktAQvYB7HzcCxDGqEZU6oCmb2INHuOoKxbtR+HFkmYWBKv/dOZtGRiAjDhj92g=="],
 
-    "jose": ["jose@5.10.0", "", {}, "sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg=="],
+    "jose": ["jose@6.2.2", "", {}, "sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ=="],
 
     "long": ["long@5.3.2", "", {}, "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="],
 

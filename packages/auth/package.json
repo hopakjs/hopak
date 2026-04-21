@@ -1,6 +1,6 @@
 {
   "name": "@hopak/auth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Authentication for Hopak.js — JWT, credential signup/login, OAuth (GitHub + Google), and role-based access control.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",
@@ -32,10 +32,10 @@
   "peerDependencies": {
     "@hopak/common": "workspace:*",
     "@hopak/core": "workspace:*",
-    "jose": "^5.6.0"
+    "jose": "^5.6.0 || ^6.0.0"
   },
   "devDependencies": {
     "@hopak/testing": "workspace:*",
-    "jose": "^5.6.0"
+    "jose": "^6.0.0"
   }
 }

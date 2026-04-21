@@ -1933,8 +1933,10 @@ Six endpoints under `/api/<plural>/`:
 | `DELETE` | `/api/posts/:id` | `crud.remove(post)` |
 
 `limit` defaults to 20, max 100. Validation errors return 400; UNIQUE
-violations return 409; `password` / `secret` / `token` fields are
-stripped from responses (including those loaded through `include`).
+violations return 409; fields declared with `password()` / `secret()` /
+`token()` are stripped from responses (including those loaded through
+`include`) — the name of the field doesn't matter, the field factory
+does. See Recipe 3.
 
 ### Customize an endpoint
 
