@@ -4,7 +4,7 @@ import { type HopakConfig, type HopakConfigInput, type Logger, createLogger } fr
 import type { Database } from '../db/client';
 import { createDatabase } from '../db/factory';
 import { translateConnectError } from '../db/sql/connect-translator';
-import { ensureDevCert } from '../http/certs';
+import { loadDevCert } from '../http/certs';
 import { loadFileRoutes } from '../http/loader';
 import { Router } from '../http/router';
 import { type ListeningServer, startServer } from '../http/server';
@@ -98,7 +98,7 @@ async function resolveTls(config: HopakConfig, log: Logger): Promise<TlsMaterial
   }
 
   const certDir = join(config.paths.hopakDir, DEV_CERT_DIRNAME);
-  return ensureDevCert({ certDir, log });
+  return loadDevCert(certDir);
 }
 
 function resolveListenPort(

@@ -17,8 +17,8 @@ Commands:
                           Preconfigure dialect (default: sqlite)
     --no-install          Skip dependency install (useful for CI / offline)
   dev                     Start dev server (hot reload)
-  generate <kind> <name>  Scaffold files:
-                          model | route | crud
+  generate <kind> [<name>]  Scaffold files:
+                          model | route | crud | cert
   sync                    Apply model schema to the database (CREATE TABLE IF NOT EXISTS)
   check                   Audit project state (config, models, routes)
   use <capability>        Switch DB dialect in an existing project
@@ -33,6 +33,7 @@ Examples:
   hopak generate model post
   hopak generate crud post
   hopak generate route posts/[id]
+  hopak generate cert           # dev HTTPS key + self-signed cert
   hopak sync
   hopak use postgres
 `;
@@ -98,14 +99,14 @@ const COMMANDS: Record<string, Command> = {
     run: ({ log }) => runDev({ log }),
   },
   generate: {
-    describe: 'Scaffold a model or route',
+    describe: 'Scaffold a model, route, CRUD resource, or dev HTTPS cert',
     run: ({ args, log }) => {
       const [kind, name] = args;
-      if (!kind || !name) {
-        log.error('Usage: hopak generate <model|route> <name>');
+      if (!kind) {
+        log.error('Usage: hopak generate <model|route|crud|cert> [<name>]');
         return Promise.resolve(1);
       }
-      return runGenerate({ kind, name, log });
+      return runGenerate({ kind, ...(name ? { name } : {}), log });
     },
   },
   sync: {

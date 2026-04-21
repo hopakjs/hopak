@@ -3,7 +3,13 @@
 [![npm](https://img.shields.io/npm/v/@hopak/cli.svg)](https://www.npmjs.com/package/@hopak/cli)
 [![license](https://img.shields.io/npm/l/@hopak/cli.svg)](https://github.com/hopakjs/hopak/blob/main/LICENSE)
 
-Command-line interface for [Hopak.js](https://github.com/hopakjs/hopak) — scaffolds projects, runs the dev server, generates models and routes, migrates the database, and audits project state.
+Command-line interface for [Hopak.js](https://github.com/hopakjs/hopak) —
+scaffolds projects, runs the dev server, generates models / routes / CRUD /
+dev certs, switches database dialects, syncs schema, and audits project state.
+
+Everything the framework serves at runtime is a file on disk. The CLI is the
+only thing that writes those files — there are no config flags that cause
+runtime to materialize code or crypto on your behalf.
 
 ## Contents
 
@@ -12,6 +18,7 @@ Command-line interface for [Hopak.js](https://github.com/hopakjs/hopak) — scaf
   - [hopak new](#hopak-new-name)
   - [hopak dev](#hopak-dev)
   - [hopak generate](#hopak-generate-kind-name)
+  - [hopak use](#hopak-use-dialect)
   - [hopak sync](#hopak-sync)
   - [hopak check](#hopak-check)
   - [hopak --version / --help](#hopak---version----help)
@@ -30,7 +37,8 @@ Command-line interface for [Hopak.js](https://github.com/hopakjs/hopak) — scaf
 bun add -g @hopak/cli
 ```
 
-You get a `hopak` binary on your `$PATH`. Use this for the `hopak new <name>` flow and any ad-hoc command.
+You get a `hopak` binary on your `$PATH`. Use this for the
+`hopak new <name>` flow and any ad-hoc command.
 
 ### As a dev dependency
 
@@ -38,103 +46,179 @@ You get a `hopak` binary on your `$PATH`. Use this for the `hopak new <name>` fl
 bun add -d @hopak/cli
 ```
 
-Call via `bun x hopak <cmd>` or through `package.json` scripts. Pins the CLI version with your project — good for teams and CI.
+Call via `bunx hopak <cmd>` or through `package.json` scripts. Pins
+the CLI version with your project — good for teams and CI.
 
 ## Commands
 
 ### `hopak new <name>`
 
-Scaffolds a new Hopak project in `./<name>/`. The directory must not exist.
+Scaffolds a new Hopak project in `./<name>/`. The directory must not
+exist. By **default the dialect is SQLite** — zero-install, works
+offline, file stored at `.hopak/data.db`. Pick a different DB up
+front with `--db`:
 
 ```bash
-hopak new my-app
+hopak new my-app                   # SQLite (default)
+hopak new my-app --db postgres     # Postgres — installs `postgres` driver
+hopak new my-app --db mysql        # MySQL — installs `mysql2` driver
+hopak new my-app --db sqlite       # explicit opt-in (same as default)
 ```
 
-Generates:
+Flags:
+
+| Flag | Effect |
+|---|---|
+| `--db <sqlite\|postgres\|mysql>` | Preconfigures `hopak.config.ts`, adds the driver to `package.json`, seeds `.env.example` with a `DATABASE_URL` placeholder. |
+| `--no-install` | Skips `bun install` — useful for CI or offline setups. |
+
+Generates (SQLite default):
 
 ```
 my-app/
 ├── app/
-│   ├── models/post.ts      # example model with { crud: true }
-│   └── routes/index.ts     # example route at GET /
-├── public/                 # for static files
-├── hopak.config.ts         # minimal config (HTTPS commented out)
-├── main.ts                 # import { hopak }; await hopak().listen()
+│   ├── models/post.ts             # example model — edit fields to taste
+│   ├── routes/index.ts            # GET /
+│   └── routes/api/
+│       ├── posts.ts               # GET list + POST create (uses crud.*)
+│       └── posts/[id].ts          # GET/PUT/PATCH/DELETE (uses crud.*)
+├── public/                        # static files
+├── hopak.config.ts                # database: { dialect: 'sqlite', ... }
+├── main.ts                        # await hopak().listen()
 ├── tsconfig.json
-├── package.json            # depends on @hopak/core, devDepends on @hopak/cli
+├── package.json                   # depends on @hopak/core, dev-depends on @hopak/cli
 ├── .gitignore
 ├── .env.example
 └── README.md
 ```
 
-Next steps are printed to the log:
+With `--db postgres` / `--db mysql` the `database:` block reads
+`{ dialect: 'postgres', url: process.env.DATABASE_URL }`, the driver
+(`postgres` or `mysql2`) is added to dependencies, and
+`.env.example` contains a `DATABASE_URL=…` placeholder.
+
+After scaffolding:
 
 ```bash
 cd my-app
-bun install
+# sqlite: just run —
+hopak dev
+
+# postgres / mysql: fill in the connection first —
+cp .env.example .env
+# edit DATABASE_URL, then:
+hopak sync      # CREATE TABLE IF NOT EXISTS for every model
 hopak dev
 ```
 
 ### `hopak dev`
 
-Runs the project with Bun's `--hot` mode. Starts `main.ts` as a child process with stdio forwarded; hot-reloads source changes automatically.
+Runs the project with Bun's `--hot` mode plus a lightweight file
+watcher on `app/` so newly-added model or route files trigger a
+cold-restart (Bun's own hot reload only patches already-imported
+modules).
 
 ```bash
 hopak dev
 ```
 
-Under the hood this is a thin wrapper around:
-
-```bash
-bun --hot run main.ts
-```
-
-Pass `--entry <file>` (reserved for the future) to change the entry point. For now it defaults to `main.ts`.
-
-On start you see:
+On start:
 
 ```
-  Hopak.js v0.0.6
+  Hopak.js v0.2.0
   ↳ Listening on http://localhost:3000
   ↳ Database: sqlite
 ```
 
+Edits to existing files reload through Bun's HMR with state preserved
+(milliseconds). Adding / deleting a route or model file logs
+`New/removed file under app/ — restarting…` and the dev child is
+respawned.
+
 Press `Ctrl-C` to stop.
 
-### `hopak generate <kind> <name>`
+### `hopak generate <kind> [<name>]`
 
-Scaffolds a new model or route file from a template. Aliased as `hopak g`.
+Scaffolds files from a template. Aliased as `hopak g`. Four kinds:
+
+| Kind | What it writes | Arg |
+|---|---|---|
+| `model <name>` | `app/models/<name>.ts` (one table) | required |
+| `crud <name>` | `app/routes/api/<plural>.ts` + `app/routes/api/<plural>/[id].ts` (REST for the model) | required |
+| `route <path>` | `app/routes/<path>.ts` (one handler) | required |
+| `cert` | `.hopak/certs/dev.{key,crt}` + local `.gitignore` (for local HTTPS) | none |
 
 #### `hopak generate model <name>`
 
 ```bash
 hopak generate model comment
+# → Created file  app/models/comment.ts
 ```
-
-Creates `app/models/comment.ts`:
 
 ```ts
+// app/models/comment.ts
 import { model, text } from '@hopak/core';
 
-export default model(
-  'comment',
-  {
-    name: text().required(),
-  },
-  { crud: true },
-);
+export default model('comment', {
+  name: text().required(),
+});
 ```
 
-Edit the fields to match your domain.
+Edit the fields to match your domain. Generating the model alone
+gives you a DB table (after `hopak sync` or first `hopak dev` boot
+on SQLite) and a typed client via `ctx.db.model('comment')` — but
+no HTTP endpoints. Run `hopak generate crud comment` to add those.
+
+#### `hopak generate crud <name>`
+
+```bash
+hopak generate crud post
+# → Created file  app/routes/api/posts.ts
+# → Created file  app/routes/api/posts/[id].ts
+```
+
+Each generated file uses the `crud` helpers exported from `@hopak/core`:
+
+```ts
+// app/routes/api/posts.ts
+import { crud } from '@hopak/core';
+import post from '../../models/post';
+
+export const GET = crud.list(post);
+export const POST = crud.create(post);
+```
+
+```ts
+// app/routes/api/posts/[id].ts
+import { crud } from '@hopak/core';
+import post from '../../../models/post';
+
+export const GET = crud.read(post);
+export const PUT = crud.update(post);
+export const PATCH = crud.patch(post);
+export const DELETE = crud.remove(post);
+```
+
+Six endpoints on `/api/<plural>/` — all paginated, validated, and
+with sensitive fields (password / secret / token) stripped. Customize
+a verb by replacing its export with your own `defineRoute(...)`;
+delete an export to remove the verb entirely (the router answers
+`405 Method Not Allowed` with an `Allow:` header listing what
+remains).
 
 #### `hopak generate route <path>`
 
 ```bash
 hopak generate route search
 hopak generate route posts/[id]/publish
+hopak generate route api/users/[id]
+hopak generate route files/[...rest]
 ```
 
-Creates the file at the given path under `app/routes/`. The template exports a `GET` handler:
+Creates the file at the given path under `app/routes/`. Leading `/`
+and trailing `.ts` are stripped — `posts/new.ts` and `posts/new` both
+produce `app/routes/posts/new.ts`. The template starts with a
+`GET` handler:
 
 ```ts
 import { defineRoute } from '@hopak/core';
@@ -144,20 +228,63 @@ export const GET = defineRoute({
 });
 ```
 
-Rename the export to `POST`/`PUT`/`PATCH`/`DELETE` for other methods; multiple methods can live in one file.
+Rename the export to any verb, or add multiple exports in one file.
 
-Leading `/` and trailing `.ts` in the `<path>` argument are stripped automatically, so `/posts/new.ts` and `posts/new` both produce `app/routes/posts/new.ts`.
+#### `hopak generate cert`
+
+```bash
+hopak generate cert
+# → Generating self-signed dev certificate { path: ".hopak/certs" }
+# → Dev certificate ready. Re-run `hopak dev` with HTTPS enabled.
+```
+
+Shells out to `openssl req -x509` once, writes the key/cert/gitignore
+trio, and exits. Idempotent — running it when both files already
+exist is a no-op. Pair with `server.https.enabled: true` in
+`hopak.config.ts`; `hopak dev` refuses to start with HTTPS enabled
+but no cert files present and points you back here.
+
+Requires `openssl` on the machine. macOS ships it; on Linux:
+`apt install openssl` / `apk add openssl`.
 
 #### Refusal policy
 
-`hopak generate` never overwrites an existing file. If the target already exists the command fails with exit code `1`.
+`hopak generate model/route/crud` never overwrites. If any target
+already exists the command fails with exit code `1`. `generate cert`
+is the exception — it's idempotent and exits `0` when the files are
+already there.
+
+### `hopak use <dialect>`
+
+Switches an existing project from one dialect to another: installs
+the driver (`postgres` / `mysql2`), rewrites the `database:` block in
+`hopak.config.ts`, and adds `DATABASE_URL` to `.env.example`.
+
+```bash
+hopak use postgres
+hopak use mysql
+hopak use sqlite
+```
+
+The patcher replaces a bare-default block (what `hopak new` writes)
+in place, but refuses to touch a block you've tuned (custom file
+path, extra URL params, `ssl` config) — it prints the snippet to
+paste and exits `1`, so tuning is never silently discarded.
+
+For a brand-new project, prefer `hopak new <name> --db <dialect>` —
+it's one fewer step.
 
 ### `hopak sync`
 
-Applies the model schema to the database without starting the server —
-emits `CREATE TABLE IF NOT EXISTS` for every registered model. Safe to
-run repeatedly (idempotent replay). Useful in CI, or right after
-`hopak use postgres` on a fresh database before `hopak dev`.
+Applies the model schema to the database without starting the server
+— emits `CREATE TABLE IF NOT EXISTS` for every registered model,
+topologically sorted so FK targets are created before dependents
+(required for Postgres / MySQL; SQLite wouldn't care but is sorted
+anyway for consistency).
+
+Safe to run repeatedly (idempotent replay). Useful in CI, right
+after `hopak use postgres` on a fresh database, or before the first
+`hopak dev` on Postgres / MySQL.
 
 ```bash
 hopak sync
@@ -170,28 +297,33 @@ Syncing schema to database {"cwd":"/.../my-app"}
 Schema synchronized {"models":3,"dialect":"sqlite"}
 ```
 
-This command **does not** handle schema changes (ALTER TABLE, rename,
-column drop). Versioned migrations — `generate` / `up` / `down` /
-`status` — will arrive in a later release under a different command name.
+Does **not** handle schema changes (ALTER TABLE, rename, column
+drop). Versioned migrations — `generate` / `up` / `down` / `status`
+— will arrive in a later release under a different command name.
 
 ### `hopak check`
 
-Audits project state without starting a server. Prints a coloured report of what Hopak will see at boot time: config, database location, models scanned, routes discovered, auto-CRUD endpoint count, and the static directory.
+Audits project state without starting a server. Prints a coloured
+report of what Hopak will see at boot time: config, database
+location, models scanned, routes discovered, static directory.
+Validates the config up front and fails fast on an invalid
+`dialect`, `port`, or `logLevel`.
 
 ```bash
 hopak check
 ```
 
 ```
-  ✓ Config  hopak.config.ts loaded
+  ✓ Config    hopak.config.ts loaded
   ✓ Database  sqlite (/.../my-app/.hopak/data.db)
-  ✓ Models  3 loaded (comment, user, post)
-  ✓ Routes  2 file route(s)
-  ✓ Auto-CRUD  3 model(s) with crud:true → 18 endpoint(s)
-  ✓ Static  serving public/
+  ✓ Models    3 loaded (comment, user, post)
+  ✓ Routes    8 file route(s)
+  ✓ Static    serving public/
 ```
 
-Exits with `1` if scanning any model or route file failed — use this in CI to catch broken scaffolds.
+Exits with `1` if any model/route file fails to scan, or if the
+config is invalid — safe to run in CI to catch broken scaffolds
+before they hit the dev server.
 
 ### `hopak --version` / `--help`
 
@@ -212,13 +344,15 @@ The CLI relies on the default Hopak layout unless you override paths:
 my-app/
 ├── app/
 │   ├── models/       # hopak generate model <name> writes here
-│   └── routes/       # hopak generate route <path> writes here
+│   └── routes/       # hopak generate route/crud writes here
 ├── public/           # served as static files
+├── .hopak/           # runtime state (db file, dev cert); gitignored
 ├── hopak.config.ts   # optional
 └── main.ts           # entry point executed by hopak dev
 ```
 
-`hopak sync`, `hopak check`, and `hopak dev` all read `hopak.config.ts` to locate these directories.
+`hopak sync`, `hopak check`, and `hopak dev` all read
+`hopak.config.ts` to locate these directories.
 
 ## Custom project paths
 
@@ -236,7 +370,8 @@ export default defineConfig({
 });
 ```
 
-After this, `hopak generate model post` writes to `src/domain/post.ts`, and `hopak dev` / `hopak check` look in the new locations.
+After this, `hopak generate model post` writes to `src/domain/post.ts`,
+and `hopak dev` / `hopak check` look in the new locations.
 
 ## Integration with package.json scripts
 
@@ -265,7 +400,8 @@ Typical extensions:
 }
 ```
 
-When `@hopak/cli` is listed as a `devDependency`, `bun run dev` invokes the local binary — no global install needed on that machine.
+When `@hopak/cli` is listed as a `devDependency`, `bun run dev`
+invokes the local binary — no global install needed on that machine.
 
 ## Related packages
 

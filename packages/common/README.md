@@ -182,7 +182,7 @@ Lowercases, trims, strips non-word characters, collapses whitespace to `-`.
 
 ### `pluralize(word)`
 
-Simple English pluraliser used by auto-CRUD to form URL segments:
+Simple English pluraliser used by the CRUD scaffolder to form URL segments:
 
 ```ts
 pluralize('post')    // 'posts'

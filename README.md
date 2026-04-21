@@ -53,7 +53,31 @@ every route is in source.
 
 ## Recipes
 
-Common backend tasks, step by step. Every recipe shows **where the file goes**, the **code**, **how to run it**, and **what you should see**. Start from a freshly scaffolded project (`hopak new my-app` → `cd my-app`). `hopak new` runs `bun install` for you — no separate step.
+Common backend tasks, step by step. Every recipe shows **where the
+file goes**, the **code**, **how to run it**, and **what you should
+see**. Start from a freshly scaffolded project:
+
+```bash
+hopak new my-app          # SQLite by default (zero-install, works offline)
+cd my-app
+```
+
+`hopak new` runs `bun install` for you — no separate step. Want a
+different dialect from the start? Pass `--db`:
+
+```bash
+hopak new my-app --db postgres      # or --db mysql / --db sqlite
+```
+
+Picking the dialect up front writes the right `database:` block into
+`hopak.config.ts`, adds the driver to `package.json`, and seeds
+`.env.example` with a `DATABASE_URL` placeholder. See
+[Recipe 17](#17-pick-or-switch-the-database) for the full flow of
+both `hopak new --db` and `hopak use`.
+
+Every recipe below assumes the default SQLite unless explicitly
+noted — the runtime behavior is identical on every dialect, so code
+examples are copy-paste portable.
 
 ### 1. Create a REST resource
 
@@ -140,16 +164,12 @@ Validation is generated **from the model** — you don't write a separate schema
 // app/models/user.ts
 import { model, text, email, enumOf, number } from '@hopak/core';
 
-export default model(
-  'user',
-  {
-    name: text().required().min(2).max(100),
-    email: email().required().unique(),
-    age: number().optional().min(18).max(120),
-    role: enumOf('admin', 'user', 'guest').default('user'),
-  },
-
-);
+export default model('user', {
+  name: text().required().min(2).max(100),
+  email: email().required().unique(),
+  age: number().optional().min(18).max(120),
+  role: enumOf('admin', 'user', 'guest').default('user'),
+});
 ```
 
 **2.** Send a bad request:
@@ -247,16 +267,12 @@ Exclusion happens in the serializer for **every** CRUD endpoint: list, single, c
 // app/models/user.ts
 import { model, text, email, password, token } from '@hopak/core';
 
-export default model(
-  'user',
-  {
-    name: text().required(),
-    email: email().required().unique(),
-    password: password().required().min(8),
-    apiKey: token().optional(),
-  },
-
-);
+export default model('user', {
+  name: text().required(),
+  email: email().required().unique(),
+  password: password().required().min(8),
+  apiKey: token().optional(),
+});
 ```
 
 **Verify:**
@@ -643,29 +659,21 @@ Hopak has two kinds of relation fields:
 // app/models/user.ts
 import { model, text, email, hasMany } from '@hopak/core';
 
-export default model(
-  'user',
-  {
-    name: text().required(),
-    email: email().required().unique(),
-    posts: hasMany('post'),   // virtual — no column
-  },
-
-);
+export default model('user', {
+  name: text().required(),
+  email: email().required().unique(),
+  posts: hasMany('post'),   // virtual — no column
+});
 ```
 
 ```ts
 // app/models/post.ts
 import { model, text, belongsTo } from '@hopak/core';
 
-export default model(
-  'post',
-  {
-    title: text().required(),
-    author: belongsTo('user'),   // creates `author_id` foreign key
-  },
-
-);
+export default model('post', {
+  title: text().required(),
+  author: belongsTo('user'),   // creates `author_id` foreign key
+});
 ```
 
 Create rows:
@@ -1154,10 +1162,44 @@ On SQLite / MySQL this throws with a pointer — that SQL extension isn't
 standard, and there's no clean portable rewrite. Use `raw()` or a
 subquery if you need the same semantics cross-dialect.
 
-### 17. Switch the database — `hopak use postgres` / `mysql`
+### 17. Pick or switch the database
 
-**Goal:** move a project from the default SQLite to Postgres or MySQL with
-one CLI command.
+**Goal:** use Postgres or MySQL instead of the default SQLite.
+
+There are two entry points depending on where you are.
+
+#### 17a. At project creation — `hopak new --db postgres`
+
+Pick the dialect up front; `hopak new` wires everything in one pass.
+
+```bash
+hopak new my-app --db postgres
+cd my-app
+```
+
+What happens:
+
+1. **`hopak.config.ts`** is written with
+   `database: { dialect: 'postgres', url: process.env.DATABASE_URL }`.
+2. **`package.json`** lists `postgres` (or `mysql2` for MySQL) as a
+   dependency — `bun install` picks it up during the same
+   `hopak new` run.
+3. **`.env.example`** contains a placeholder:
+   `DATABASE_URL=postgres://user:pass@localhost:5432/myapp`.
+4. **`README.md`** in the project tells you the extra setup step
+   ("copy `.env.example` → `.env`, run `hopak sync`").
+
+Next:
+
+```bash
+cp .env.example .env             # fill in real credentials
+hopak sync                        # CREATE TABLE IF NOT EXISTS for every model
+hopak dev                         # boots on port 3000
+```
+
+#### 17b. In an existing project — `hopak use postgres`
+
+Switch an already-scaffolded project from one dialect to another.
 
 ```bash
 hopak use postgres
@@ -1165,15 +1207,15 @@ hopak use postgres
 
 What this does:
 
-1. **Installs the driver** — `bun add postgres` (or `bun add mysql2` for
-   MySQL). SQLite ships with Bun — nothing to install there.
-2. **Patches `hopak.config.ts`** — adds
-   `database: { dialect: 'postgres', url: process.env.DATABASE_URL }`
-   if there's no existing `database:` block. If one is already present
-   with a different dialect, the command prints the snippet to paste and
-   exits — never silently overwrites tuning you may have added.
-3. **Adds `DATABASE_URL` to `.env.example`** — a commented placeholder so
-   you know what format the URL expects.
+1. **Installs the driver** — `bun add postgres` (or `bun add mysql2`).
+   SQLite ships with Bun — nothing to install there.
+2. **Rewrites the `database:` block** in `hopak.config.ts`. The
+   patcher recognizes the bare default from `hopak new` and replaces
+   it cleanly; a tuned block (custom sqlite file path, extra URL
+   params, `ssl` config, etc.) is left alone and the command prints
+   a snippet for you to paste manually so it never silently discards
+   your tuning.
+3. **Adds `DATABASE_URL`** to `.env.example` if not already present.
 
 Next:
 
@@ -1181,7 +1223,7 @@ Next:
 # 1. Start Postgres locally (or use a managed one like Neon / Supabase / RDS)
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=hopak postgres:16-alpine
 
-# 2. Copy .env.example → .env and set DATABASE_URL:
+# 2. Fill DATABASE_URL in .env:
 #    DATABASE_URL=postgres://postgres:hopak@localhost:5432/postgres
 
 # 3. Sync schema + run
@@ -1189,7 +1231,7 @@ hopak sync
 hopak dev
 ```
 
-The rest of the project code is **unchanged** — models, CRUD, routes,
+The rest of the project code is **unchanged** — models, CRUD routes,
 `ctx.db.model(...)` — all work identically on every dialect.
 
 #### Dialect differences (summary)
@@ -1210,9 +1252,31 @@ feature is emitted**, not whether your code has to change — you still write
 
 ### 18. Enable HTTPS for local dev
 
-**Goal:** test your frontend against `https://localhost:3443` without configuring OpenSSL by hand.
+**Goal:** test your frontend against `https://localhost:3443` using a
+self-signed cert.
 
-**1.** Enable it in config:
+**1.** Generate the dev cert:
+
+```bash
+hopak generate cert
+# → Generating self-signed dev certificate { path: ".hopak/certs" }
+# → Dev certificate ready. Re-run `hopak dev` with HTTPS enabled.
+```
+
+This runs `openssl req -x509` once and writes two files plus a
+`.gitignore` that keeps them out of version control:
+
+```
+.hopak/certs/
+├── dev.key     # private key (gitignored)
+├── dev.crt     # self-signed cert (gitignored)
+└── .gitignore  # `*` — ignores everything except itself
+```
+
+**Requires `openssl` on the machine.** macOS ships it. On
+Ubuntu/Debian: `apt install openssl`. On Alpine: `apk add openssl`.
+
+**2.** Turn HTTPS on in the config:
 
 ```ts
 // hopak.config.ts
@@ -1223,23 +1287,24 @@ export default defineConfig({
 });
 ```
 
-**2.** Restart:
+**3.** Restart the dev server:
 
 ```bash
 hopak dev
 ```
 
-First boot runs `openssl req` to generate a self-signed certificate under `.hopak/certs/localhost.{crt,key}` (the directory is in `.gitignore` automatically). Subsequent boots reuse it. Delete the files to re-issue.
+Hopak reads the cert pair from `.hopak/certs/dev.{key,crt}` and
+serves both HTTP (port 3000) and HTTPS (port 3443). If the files
+aren't there it fails fast with a pointer to `hopak generate cert` —
+nothing is synthesized behind your back at boot.
 
-**Requires `openssl` on the machine.** macOS ships it. On Ubuntu/Debian: `apt install openssl`. On Alpine: `apk add openssl`.
-
-**3.** Verify:
+**4.** Verify:
 
 ```bash
 curl -k https://localhost:3443/           # -k accepts the self-signed cert
 ```
 
-Browser will show a warning the first time — that's expected for a self-signed cert.
+Browser will show a warning the first time — that's expected for a self-signed cert. Delete `.hopak/certs/` and re-run `hopak generate cert` to re-issue.
 
 #### Trust the cert (remove the browser warning)
 
@@ -1558,49 +1623,105 @@ No code changes needed inside the model/route files themselves — the paths in 
 
 ### 22. Scaffold files from the CLI
 
-**Goal:** don't write boilerplate by hand — let `hopak generate` create the file with a starter template.
+**Goal:** don't write boilerplate by hand. Every file Hopak uses to
+serve your app is generated by a single command and then edited like
+normal source — no runtime magic builds routes, certs, or CRUD
+handlers behind your back.
+
+Four kinds: `model`, `route`, `crud`, `cert`.
+
+#### `generate model <name>` — one table
 
 ```bash
 hopak generate model comment
-# → Creates app/models/comment.ts
+# → Created file  app/models/comment.ts
 
-hopak g model comment
-# ↑ same thing, short form
+hopak g model comment            # same thing, short form
 ```
 
-Contents of the generated model:
+The generated model is deliberately minimal; replace the fields
+with your real schema:
 
 ```ts
+// app/models/comment.ts
 import { model, text } from '@hopak/core';
 
-export default model(
-  'comment',
-  {
-    name: text().required(),
-  },
-
-);
+export default model('comment', {
+  name: text().required(),
+});
 ```
 
-Replace the fields with your real schema and save — `hopak dev` hot-reloads.
+Generating the model alone gives you a DB table (after `hopak sync`)
+and a typed client (`ctx.db.model('comment')`) — but no HTTP
+endpoints. Run `hopak generate crud comment` next to expose REST, or
+write your own route files.
 
-#### Generating routes
+#### `generate crud <name>` — REST for a model
+
+```bash
+hopak generate crud post
+# → Created file  app/routes/api/posts.ts
+# → Created file  app/routes/api/posts/[id].ts
+```
+
+Two files using the `crud` helpers from `@hopak/core`:
+
+```ts
+// app/routes/api/posts.ts
+import { crud } from '@hopak/core';
+import post from '../../models/post';
+
+export const GET = crud.list(post);
+export const POST = crud.create(post);
+```
+
+```ts
+// app/routes/api/posts/[id].ts
+import { crud } from '@hopak/core';
+import post from '../../../models/post';
+
+export const GET = crud.read(post);
+export const PUT = crud.update(post);
+export const PATCH = crud.patch(post);
+export const DELETE = crud.remove(post);
+```
+
+After the scaffold:
+
+```bash
+hopak check
+# → Models  1 loaded (post)
+# → Routes  6 file route(s)
+
+hopak dev
+# POST, GET list, GET /:id, PUT, PATCH, DELETE — all live on /api/posts
+```
+
+Customize any verb by replacing the corresponding export with your
+own `defineRoute(...)`; delete the export to remove the verb entirely
+(the router answers `405 Method Not Allowed` with an `Allow:` header
+listing what remains). See Recipe 5 for the full flow.
+
+The model must exist before you run `generate crud`; the command
+only writes the route files.
+
+#### `generate route <path>` — one handler
 
 ```bash
 hopak generate route search
-# → Creates app/routes/search.ts  (URL: /search)
+# → Created file  app/routes/search.ts        (URL: /search)
 
 hopak generate route posts/[id]/publish
-# → Creates app/routes/posts/[id]/publish.ts  (URL: /posts/:id/publish)
+# → Created file  app/routes/posts/[id]/publish.ts  (URL: /posts/:id/publish)
 
 hopak generate route api/users/[id]
-# → Creates app/routes/api/users/[id].ts  (URL: /api/users/:id)
+# → Created file  app/routes/api/users/[id].ts     (URL: /api/users/:id)
 
 hopak generate route files/[...rest]
-# → Creates app/routes/files/[...rest].ts  (URL: /files/* catch-all)
+# → Created file  app/routes/files/[...rest].ts    (URL: /files/* catch-all)
 ```
 
-All generated routes start with a `GET` handler:
+Starter contents:
 
 ```ts
 import { defineRoute } from '@hopak/core';
@@ -1610,7 +1731,25 @@ export const GET = defineRoute({
 });
 ```
 
-Rename `GET` to `POST` / `PUT` / `PATCH` / `DELETE`, or add multiple exports in the same file for multiple methods.
+Rename `GET` to any other verb, or add multiple exports to the same
+file for multiple methods.
+
+#### `generate cert` — dev HTTPS key + cert
+
+```bash
+hopak generate cert
+# → Generating self-signed dev certificate { path: ".hopak/certs" }
+# → Dev certificate ready. Re-run `hopak dev` with HTTPS enabled.
+```
+
+Writes `.hopak/certs/dev.key` + `dev.crt` + a local `.gitignore` so
+the material never lands in a commit. Enable HTTPS in config
+(`server.https.enabled: true`) and restart `hopak dev`. If you turn
+on HTTPS without running this first, `hopak dev` refuses to start
+and points you back here — the runtime never fabricates crypto on
+its own.
+
+See Recipe 18 for the full HTTPS walkthrough.
 
 #### Path normalization
 
@@ -1627,17 +1766,24 @@ Parent directories are created automatically.
 
 #### Custom project paths
 
-If `hopak.config.ts` has `paths.models: 'src/domain'`, `hopak generate model comment` writes to `src/domain/comment.ts` — the generator respects the config (see Recipe 21).
+If `hopak.config.ts` has `paths.models: 'src/domain'`, `hopak generate
+model comment` writes to `src/domain/comment.ts` — the generator
+respects the config (see Recipe 21).
 
 #### Refusal policy — never overwrites
 
-Running `hopak generate model comment` twice fails on the second run:
+Running any `generate` twice against the same target path fails on
+the second run:
 
 ```
-Error: app/models/comment.ts already exists
+Error: File already exists: app/models/comment.ts
 ```
 
-Exit code `1` — safe to run from npm scripts or Makefiles. Delete the file (or rename it) if you really want a fresh template.
+Exit code `1` — safe to run from npm scripts or Makefiles. Delete
+the file (or rename it) if you really want a fresh template.
+`generate cert` is the exception: if both `dev.key` and `dev.crt`
+are already present it exits `0` with `Dev certificate already
+exists` (idempotent — safe in setup scripts).
 
 ---
 
@@ -1649,16 +1795,12 @@ A model is one file. It defines the table, the validation, the TypeScript row ty
 // app/models/post.ts
 import { model, text, boolean, belongsTo } from '@hopak/core';
 
-export default model(
-  'post',
-  {
-    title: text().required().min(3).max(200),
-    content: text().required(),
-    published: boolean().default(false),
-    author: belongsTo('user'),
-  },
-
-);
+export default model('post', {
+  title: text().required().min(3).max(200),
+  content: text().required(),
+  published: boolean().default(false),
+  author: belongsTo('user'),
+});
 ```
 
 ### Field types

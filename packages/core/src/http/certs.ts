@@ -7,7 +7,13 @@ export interface CertPair {
   cert: string;
 }
 
-export interface EnsureDevCertOptions {
+export interface CertFileLocations {
+  certDir: string;
+  keyPath: string;
+  certPath: string;
+}
+
+export interface GenerateDevCertOptions {
   certDir: string;
   log?: Logger;
   hostname?: string;
@@ -18,6 +24,14 @@ const CERT_FILENAME = 'dev.crt';
 const KEY_VALIDITY_DAYS = '365';
 const RSA_KEY_BITS = 'rsa:2048';
 const GITIGNORE_CONTENTS = '*\n!.gitignore\n';
+
+export function certFileLocations(certDir: string): CertFileLocations {
+  return {
+    certDir,
+    keyPath: join(certDir, KEY_FILENAME),
+    certPath: join(certDir, CERT_FILENAME),
+  };
+}
 
 async function readCertPair(keyPath: string, certPath: string): Promise<CertPair> {
   const [key, cert] = await Promise.all([readFile(keyPath, 'utf8'), readFile(certPath, 'utf8')]);
@@ -73,18 +87,42 @@ async function writeCertGitignore(certDir: string, log: Logger | undefined): Pro
   }
 }
 
-export async function ensureDevCert(options: EnsureDevCertOptions): Promise<CertPair> {
-  const hostname = options.hostname ?? 'localhost';
-  const keyPath = join(options.certDir, KEY_FILENAME);
-  const certPath = join(options.certDir, CERT_FILENAME);
-
-  if ((await pathExists(keyPath)) && (await pathExists(certPath))) {
-    return readCertPair(keyPath, certPath);
+/**
+ * Read the dev cert pair from disk. Throws a clear `ConfigError` if the
+ * files are missing so the user knows to run `hopak generate cert` —
+ * the runtime never creates crypto material on its own.
+ */
+export async function loadDevCert(certDir: string): Promise<CertPair> {
+  const { keyPath, certPath } = certFileLocations(certDir);
+  const [hasKey, hasCert] = await Promise.all([pathExists(keyPath), pathExists(certPath)]);
+  if (!hasKey || !hasCert) {
+    throw new ConfigError(
+      [
+        'HTTPS is enabled but no dev certificate is present.',
+        '',
+        'Run: hopak generate cert',
+        '',
+        'Or provide your own key/cert with `server.https.key` and `server.https.cert`',
+        'in hopak.config.ts.',
+      ].join('\n'),
+    );
   }
+  return readCertPair(keyPath, certPath);
+}
+
+/**
+ * CLI-invoked cert generator. Creates the directory, shells out to
+ * openssl, and drops a local `.gitignore` so the secrets don't end up
+ * committed by accident. Overwrites existing files unless `--force` is
+ * asked for at the CLI layer (the caller gates that).
+ */
+export async function generateDevCert(options: GenerateDevCertOptions): Promise<CertPair> {
+  const hostname = options.hostname ?? 'localhost';
+  const { keyPath, certPath, certDir } = certFileLocations(options.certDir);
 
   await mkdir(dirname(keyPath), { recursive: true });
-  options.log?.info('Generating self-signed dev certificate', { path: options.certDir });
+  options.log?.info('Generating self-signed dev certificate', { path: certDir });
   await runOpenssl(keyPath, certPath, hostname);
-  await writeCertGitignore(options.certDir, options.log);
+  await writeCertGitignore(certDir, options.log);
   return readCertPair(keyPath, certPath);
 }

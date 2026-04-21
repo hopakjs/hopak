@@ -4,7 +4,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#recipes">Recipes</a> ·
   <a href="#models">Models</a> ·
-  <a href="#auto-crud">CRUD</a> ·
+  <a href="#crud">CRUD</a> ·
   <a href="#routes">Routes</a> ·
   <a href="#request-context">Context</a> ·
   <a href="#validation">Validation</a> ·
@@ -40,38 +40,70 @@ hopak use sqlite           # back to default
 
 ## Recipes
 
-Common backend tasks, step by step. Every recipe shows **where the file goes**, the **code**, **how to run it**, and **what you should see**. Start from a freshly scaffolded project (`hopak new my-app` → `cd my-app`). `hopak new` runs `bun install` for you — no separate step.
+Common backend tasks, step by step. Every recipe shows **where the
+file goes**, the **code**, **how to run it**, and **what you should
+see**. Start from a freshly scaffolded project:
+
+```bash
+hopak new my-app           # SQLite by default (zero-install, works offline)
+cd my-app
+```
+
+`hopak new` runs `bun install` for you — no separate step. Want a
+different dialect up front? Pass `--db`:
+
+```bash
+hopak new my-app --db postgres
+hopak new my-app --db mysql
+```
+
+Every recipe below assumes the default SQLite unless explicitly
+noted — the runtime behavior is identical on every dialect, so code
+examples are copy-paste portable.
 
 ### 1. Create a REST resource
 
-**Goal:** expose `GET/POST /api/posts` and `GET/PUT/PATCH/DELETE /api/posts/:id` from a single file.
+**Goal:** expose `GET/POST /api/posts` and `GET/PUT/PATCH/DELETE /api/posts/:id`.
 
-**1.** Create the model file:
+**1.** Generate the model + CRUD route files:
+
+```bash
+hopak generate model post
+hopak generate crud post
+```
+
+The first command writes `app/models/post.ts`. The second writes two
+route files — `app/routes/api/posts.ts` (list + create) and
+`app/routes/api/posts/[id].ts` (read + replace + patch + delete).
+Open either file; the entire REST surface is there as plain code
+you can read and edit — nothing is synthesized at runtime.
+
+**2.** Fill in your fields:
 
 ```ts
 // app/models/post.ts
 import { model, text, boolean } from '@hopak/core';
 
-export default model(
-  'post',
-  {
-    title: text().required().min(3),
-    content: text().required(),
-    published: boolean().default(false),
-  },
-  // ← enables CRUD; without this the model has no endpoints
-);
+export default model('post', {
+  title: text().required().min(3),
+  content: text().required(),
+  published: boolean().default(false),
+});
 ```
 
-**2.** Start the server:
+**3.** Start the server:
 
 ```bash
 hopak dev
 ```
 
-On first boot Hopak creates the SQLite file at `.hopak/data.db` and runs `CREATE TABLE IF NOT EXISTS` for every model. Safe to repeat — `hopak sync` does the same thing explicitly if you prefer to separate schema sync from server start (handy for CI or a fresh Postgres / MySQL database).
+On first boot Hopak creates the SQLite file at `.hopak/data.db` and
+runs `CREATE TABLE IF NOT EXISTS` for every model. Safe to repeat
+— `hopak sync` does the same thing explicitly if you prefer to
+separate schema sync from server start (handy for CI or a fresh
+Postgres / MySQL database).
 
-**3.** Try it from another terminal:
+**4.** Try it from another terminal:
 
 ```bash
 curl -X POST http://localhost:3000/api/posts \
@@ -86,7 +118,7 @@ Expected response (`201 Created`):
   "createdAt": "...", "updatedAt": "..." }
 ```
 
-**4.** List them:
+**5.** List them:
 
 ```bash
 curl http://localhost:3000/api/posts
@@ -96,15 +128,15 @@ curl 'http://localhost:3000/api/posts?limit=5&offset=10'
 # pagination via query string; limit defaults to 20, max 100
 ```
 
-**5.** Verify what's actually registered:
+**6.** Verify what's actually registered:
 
 ```bash
 hopak check
-# ✓ Models     1 loaded (post)
-# ✓ CRUD  1 model(s) with crud:true → 6 endpoint(s)
+# ✓ Models   1 loaded (post)
+# ✓ Routes   6 file route(s)
 ```
 
-Six endpoints from one file: list, read, create, replace, patch, delete — all paginated and validated. Remove `` to keep the table but suppress the endpoints (useful for internal-only models). The plural segment (`/api/posts`) comes from `pluralize('post')` — irregular plurals are handled (`story → stories`, `box → boxes`).
+Six endpoints from two generated files: list, read, create, replace, patch, delete — all paginated and validated. Don't want endpoints for a given model? Just don't run `hopak generate crud` for it — the model still becomes a table, you just don't expose HTTP routes. The plural segment (`/api/posts`) comes from `pluralize('post')` — irregular plurals are handled (`story → stories`, `box → boxes`).
 
 ### 2. Validate input
 
@@ -121,13 +153,11 @@ import { model, text, email, enumOf, number } from '@hopak/core';
 export default model(
   'user',
   {
-    name: text().required().min(2).max(100),
-    email: email().required().unique(),
-    age: number().optional().min(18).max(120),
-    role: enumOf('admin', 'user', 'guest').default('user'),
-  },
-
-);
+  name: text().required().min(2).max(100),
+  email: email().required().unique(),
+  age: number().optional().min(18).max(120),
+  role: enumOf('admin', 'user', 'guest').default('user'),
+});
 ```
 
 **2.** Send a bad request:
@@ -225,16 +255,12 @@ Exclusion happens in the serializer for **every** CRUD endpoint: list, single, c
 // app/models/user.ts
 import { model, text, email, password, token } from '@hopak/core';
 
-export default model(
-  'user',
-  {
-    name: text().required(),
-    email: email().required().unique(),
-    password: password().required().min(8),
-    apiKey: token().optional(),
-  },
-
-);
+export default model('user', {
+  name: text().required(),
+  email: email().required().unique(),
+  password: password().required().min(8),
+  apiKey: token().optional(),
+});
 ```
 
 **Verify:**
@@ -618,29 +644,21 @@ Hopak has two kinds of relation fields:
 // app/models/user.ts
 import { model, text, email, hasMany } from '@hopak/core';
 
-export default model(
-  'user',
-  {
-    name: text().required(),
-    email: email().required().unique(),
-    posts: hasMany('post'),   // virtual — no column
-  },
-
-);
+export default model('user', {
+  name: text().required(),
+  email: email().required().unique(),
+  posts: hasMany('post'),   // virtual — no column
+});
 ```
 
 ```ts
 // app/models/post.ts
 import { model, text, belongsTo } from '@hopak/core';
 
-export default model(
-  'post',
-  {
-    title: text().required(),
-    author: belongsTo('user'),   // creates `author_id` foreign key
-  },
-
-);
+export default model('post', {
+  title: text().required(),
+  author: belongsTo('user'),   // creates `author_id` foreign key
+});
 ```
 
 Create rows:
@@ -1548,13 +1566,9 @@ Contents of the generated model:
 ```ts
 import { model, text } from '@hopak/core';
 
-export default model(
-  'comment',
-  {
-    name: text().required(),
-  },
-
-);
+export default model('comment', {
+  name: text().required(),
+});
 ```
 
 Replace the fields with your real schema and save — `hopak dev` hot-reloads.
@@ -1624,16 +1638,12 @@ A model is one file. It defines the table, the validation, the TypeScript row ty
 // app/models/post.ts
 import { model, text, boolean, belongsTo } from '@hopak/core';
 
-export default model(
-  'post',
-  {
-    title: text().required().min(3).max(200),
-    content: text().required(),
-    published: boolean().default(false),
-    author: belongsTo('user'),
-  },
-
-);
+export default model('post', {
+  title: text().required().min(3).max(200),
+  content: text().required(),
+  published: boolean().default(false),
+  author: belongsTo('user'),
+});
 ```
 
 ### Field types

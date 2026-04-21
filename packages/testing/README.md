@@ -3,7 +3,9 @@
 [![npm](https://img.shields.io/npm/v/@hopak/testing.svg)](https://www.npmjs.com/package/@hopak/testing)
 [![license](https://img.shields.io/npm/l/@hopak/testing.svg)](https://github.com/hopakjs/hopak/blob/main/LICENSE)
 
-Test helpers for [Hopak.js](https://github.com/hopakjs/hopak). Spins up real in-process servers on random ports and gives you a typed `fetch` client — no mocks, no manual setup.
+Test helpers for [Hopak.js](https://github.com/hopakjs/hopak). Spins
+up real in-process servers on random ports and gives you a typed
+`fetch` client — no mocks, no manual setup.
 
 ## Contents
 
@@ -22,19 +24,20 @@ Test helpers for [Hopak.js](https://github.com/hopakjs/hopak). Spins up real in-
 bun add -d @hopak/testing
 ```
 
-Written for `bun:test`, but `createTestServer` is framework-agnostic — you can use it under Vitest, Jest, or Node's built-in test runner.
+Written for `bun:test`, but `createTestServer` is framework-agnostic
+— you can use it under Vitest, Jest, or Node's built-in test runner.
 
 ## Quick example
 
 ```ts
 import { afterEach, expect, test } from 'bun:test';
+import { Router, crud, model, text, boolean } from '@hopak/core';
 import { createTestServer, type TestServer } from '@hopak/testing';
-import { model, text, boolean } from '@hopak/core';
 
 const post = model('post', {
   title: text().required().min(3),
   published: boolean().default(false),
-}, { crud: true });
+});
 
 let env: TestServer | undefined;
 
@@ -44,7 +47,12 @@ afterEach(async () => {
 });
 
 test('POST /api/posts creates a row', async () => {
-  env = await createTestServer({ models: [post], withCrud: true });
+  // Wire up CRUD explicitly — nothing auto-registers.
+  const router = new Router();
+  router.add('GET', '/api/posts', crud.list(post));
+  router.add('POST', '/api/posts', crud.create(post));
+
+  env = await createTestServer({ models: [post], router });
 
   const res = await env.client.post<{ id: number; title: string }>('/api/posts', {
     title: 'Hello',
@@ -55,19 +63,42 @@ test('POST /api/posts creates a row', async () => {
 });
 ```
 
-No HTTP server configuration, no free-port bookkeeping — the test picks a random port (`port: 0`), tears down in `afterEach`, and the in-memory SQLite database lives only for the test.
+No HTTP server configuration, no free-port bookkeeping — the test
+picks a random port (`port: 0`), tears down in `afterEach`, and the
+in-memory SQLite database lives only for the test.
 
 ## `createTestServer`
 
-Starts a real Hopak HTTP server for the test.
+Starts a real Hopak HTTP server for the test. Two modes:
+
+### Mode 1: point at a project `rootDir`
+
+Boots exactly like `hopak dev` — scans `app/models/`, loads file
+routes from `app/routes/`. Use this for integration tests that
+exercise real scaffolded route files.
+
+```ts
+const env = await createTestServer({ rootDir: process.cwd() });
+```
+
+### Mode 2: in-memory `models` + `router`
+
+For unit-ish tests where you wire a small router by hand.
+
+```ts
+const env = await createTestServer({
+  models: [post],
+  router: preBuiltRouter,
+});
+```
 
 ### Signature
 
 ```ts
 interface TestServerOptions {
-  models?: readonly ModelDefinition[];   // if set, in-memory SQLite is opened
-  router?: Router;                       // pre-populate with custom routes
-  withCrud?: boolean;                    // register auto-CRUD for each model
+  rootDir?: string;                      // scan a full project (mutually exclusive with models/router)
+  models?: readonly ModelDefinition[];   // in-memory SQLite opens + syncs
+  router?: Router;                       // pre-populated with routes
   staticDir?: string;                    // path to a public/ directory
   exposeStack?: boolean;                 // include stack traces in 500 responses
 }
@@ -87,19 +118,21 @@ declare function createTestServer(options?: TestServerOptions): Promise<TestServ
 
 ### Options
 
+- **`rootDir`** — boot a full project from disk. Scans models + file routes using the same pipeline as `hopak dev`. Mutually exclusive with `models` / `router` (the constructor throws if you pass both).
 - **`models`** — array of `ModelDefinition`s. When provided, an in-memory SQLite database is opened and `db.sync()` runs so you can call `env.db.model('post').create(...)` inside tests.
-- **`router`** — use your own `Router` (e.g. pre-registered with file routes) instead of the default empty one.
-- **`withCrud: true`** — register auto-CRUD routes for every model. Combine with `models` to test `POST /api/<plural>` etc.
+- **`router`** — use your own `Router` (pre-registered with routes via `crud.*` or `defineRoute`) instead of the default empty one.
 - **`staticDir`** — directory to serve under the root (for static-file tests).
 - **`exposeStack: true`** — include the stack trace in 500 responses. Handy when debugging a test that triggered a server-side error.
 
 ### Teardown
 
-Always call `env.stop()` in `afterEach` (or a `try/finally`). It closes the HTTP listener and the database.
+Always call `env.stop()` in `afterEach` (or a `try/finally`). It
+closes the HTTP listener and the database.
 
 ## `JsonClient`
 
-`env.client` is a minimal typed fetch wrapper. Every method returns a `JsonResponse<T>`:
+`env.client` is a minimal typed fetch wrapper. Every method returns
+a `JsonResponse<T>`:
 
 ```ts
 interface JsonResponse<T = unknown> {
@@ -124,7 +157,8 @@ interface JsonClient {
 
 ### Standalone usage
 
-`createJsonClient(baseUrl)` is also exported if you need the client without `createTestServer`:
+`createJsonClient(baseUrl)` is also exported if you need the client
+without `createTestServer`:
 
 ```ts
 import { createJsonClient } from '@hopak/testing';
@@ -135,16 +169,43 @@ const res = await client.get('/health');
 
 ## Patterns
 
-### Auto-CRUD end-to-end
+### End-to-end via `rootDir` (recommended for integration tests)
 
 ```ts
+import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { createTestServer, type TestServer } from '@hopak/testing';
+
+let env: TestServer;
+
+beforeAll(async () => {
+  env = await createTestServer({ rootDir: process.cwd() });
+});
+afterAll(() => env.stop());
+
+test('auto-CRUD from scaffolded files works', async () => {
+  const created = await env.client.post('/api/posts', { title: 'seed', content: 'x' });
+  expect(created.status).toBe(201);
+});
+```
+
+Uses whatever `hopak generate crud` wrote. Zero test-specific routing
+code — you're testing the files the runtime actually serves.
+
+### Sensitive fields are stripped in responses (top-level + include)
+
+```ts
+import { crud, Router, email, model, password, text } from '@hopak/core';
+
 const user = model('user', {
   email: email().required().unique(),
   password: password().required().min(8),
-}, { crud: true });
+});
 
 test('password is never returned', async () => {
-  const env = await createTestServer({ models: [user], withCrud: true });
+  const router = new Router();
+  router.add('POST', '/api/users', crud.create(user));
+
+  const env = await createTestServer({ models: [user], router });
   try {
     const res = await env.client.post<Record<string, unknown>>('/api/users', {
       email: 'a@b.com',
@@ -161,6 +222,8 @@ test('password is never returned', async () => {
 ### Custom routes only, no database
 
 ```ts
+import { defineRoute, Router } from '@hopak/core';
+
 const router = new Router();
 router.add('GET', '/health', defineRoute({ handler: () => ({ ok: true }) }));
 
@@ -172,20 +235,17 @@ expect(res.body.ok).toBe(true);
 ### Using the database directly
 
 ```ts
-const env = await createTestServer({ models: [post], withCrud: true });
+const env = await createTestServer({ models: [post] });
 
 // requireDb() throws if models weren't passed — great for type narrowing
 const db = env.requireDb();
 await db.model('post').create({ title: 'seed' });
-
-const res = await env.client.get<{ items: unknown[] }>('/api/posts');
-expect(res.body.items).toHaveLength(1);
 ```
 
 ### Static files
 
 ```ts
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -200,7 +260,8 @@ expect(res.body).toBe('hi');
 
 ### Assertion style
 
-Since `body` is the decoded JSON (or string), you can use standard `expect` calls directly:
+Since `body` is the decoded JSON (or string), you can use standard
+`expect` calls directly:
 
 ```ts
 expect(res.status).toBe(200);
