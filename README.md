@@ -2287,7 +2287,14 @@ cors: { origins: '*' }
 
 ## HTTPS
 
-Enable in config — Hopak generates a self-signed certificate on first run and caches it under `.hopak/certs/`. Requires `openssl` on the machine.
+Two steps. Generate a dev cert once:
+
+```bash
+hopak generate cert
+# writes .hopak/certs/dev.{key,crt} + a local .gitignore
+```
+
+Requires `openssl` on the machine. Then enable HTTPS in config:
 
 ```ts
 // hopak.config.ts
@@ -2305,6 +2312,10 @@ export default defineConfig({
 import { hopak } from '@hopak/core';
 await hopak().listen();
 ```
+
+If HTTPS is on and the cert files aren't present, `hopak dev` stops
+with a message pointing back to `hopak generate cert`. The runtime
+doesn't shell out to openssl on its own any more.
 
 In production: supply your own cert and key paths:
 
@@ -2366,13 +2377,16 @@ my-app/
 | Command | What it does |
 |---------|--------------|
 | `hopak new <name>` | Scaffold a new project and run `bun install` inline |
+| `hopak new <name> --db <sqlite\|postgres\|mysql>` | Pick the dialect at creation time (default: sqlite) |
 | `hopak new <name> --no-install` | Scaffold only; skip install (CI / offline) |
 | `hopak dev` | Run with hot reload |
 | `hopak generate model <name>` | Add a model file |
+| `hopak generate crud <name>` | Scaffold the 2 CRUD route files for an existing model |
 | `hopak generate route <path>` | Add a route file |
+| `hopak generate cert` | Generate a self-signed dev HTTPS cert under `.hopak/certs/` |
 | `hopak sync` | Apply model schema to the database (`CREATE TABLE IF NOT EXISTS`) |
 | `hopak check` | Audit project state (config, models, routes) |
-| `hopak use <capability>` | Enable a capability: `sqlite` / `postgres` / `mysql` |
+| `hopak use <capability>` | Switch dialect in an existing project: `sqlite` / `postgres` / `mysql` |
 | `hopak use` | List available capabilities |
 | `hopak --version` | Show version |
 | `hopak --help` | Show help |
