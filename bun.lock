@@ -20,9 +20,22 @@
         "@hopak/cli": "workspace:*",
       },
     },
+    "packages/auth": {
+      "name": "@hopak/auth",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@hopak/testing": "workspace:*",
+        "jose": "^5.6.0",
+      },
+      "peerDependencies": {
+        "@hopak/common": "workspace:*",
+        "@hopak/core": "workspace:*",
+        "jose": "^5.6.0",
+      },
+    },
     "packages/cli": {
       "name": "@hopak/cli",
-      "version": "0.0.9",
+      "version": "0.2.1",
       "bin": {
         "hopak": "./src/bin.ts",
       },
@@ -33,11 +46,11 @@
     },
     "packages/common": {
       "name": "@hopak/common",
-      "version": "0.0.9",
+      "version": "0.1.5",
     },
     "packages/core": {
       "name": "@hopak/core",
-      "version": "0.0.9",
+      "version": "0.2.4",
       "dependencies": {
         "@hopak/common": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -59,7 +72,7 @@
     },
     "packages/testing": {
       "name": "@hopak/testing",
-      "version": "0.0.9",
+      "version": "0.2.0",
       "dependencies": {
         "@hopak/common": "workspace:*",
         "@hopak/core": "workspace:*",
@@ -97,6 +110,8 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@1.9.4", "", { "os": "win32", "cpu": "x64" }, "sha512-8Y5wMhVIPaWe6jw2H+KlEm4wP/f7EW3810ZLmDlrEEy5KvBsb9ECEfu/kMWD484ijfQ8+nIi0giMgu9g1UAuuA=="],
 
+    "@hopak/auth": ["@hopak/auth@workspace:packages/auth"],
+
     "@hopak/cli": ["@hopak/cli@workspace:packages/cli"],
 
     "@hopak/common": ["@hopak/common@workspace:packages/common"],
@@ -124,6 +139,8 @@
     "iconv-lite": ["iconv-lite@0.7.2", "", { "dependencies": { "safer-buffer": ">= 2.1.2 < 3.0.0" } }, "sha512-im9DjEDQ55s9fL4EYzOAv0yMqmMBSZp6G0VvFyTMPKWxiSBHUj9NW/qqLmXUwXrrM7AvqSlTCfvqRb0cM8yYqw=="],
 
     "is-property": ["is-property@1.0.2", "", {}, "sha512-Ks/IoX00TtClbGQr4TWXemAnktAQvYB7HzcCxDGqEZU6oCmb2INHuOoKxbtR+HFkmYWBKv/dOZtGRiAjDhj92g=="],
+
+    "jose": ["jose@5.10.0", "", {}, "sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg=="],
 
     "long": ["long@5.3.2", "", {}, "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="],
 

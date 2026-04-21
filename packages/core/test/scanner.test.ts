@@ -75,8 +75,8 @@ export default model('user', { email: email().required(), password: password().r
     expect(registry.has('user')).toBe(true);
   });
 
-  test('reports error for file without default model export', async () => {
-    await writeModel('models/notmodel.ts', 'export const helper = () => 42;\n');
+  test('files without a default model are silently skipped (helpers)', async () => {
+    await writeModel('models/helper.ts', 'export const helper = () => 42;\n');
     const registry = new ModelRegistry();
     const scanner = new Scanner({
       modelsDir: join(workDir, 'models'),
@@ -84,8 +84,7 @@ export default model('user', { email: email().required(), password: password().r
     });
     const result = await scanner.scanModels();
     expect(result.models).toBe(0);
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toMatch(/does not export a model/);
+    expect(result.errors).toHaveLength(0);
   });
 
   test('reports error and continues on broken file', async () => {

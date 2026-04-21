@@ -1,3 +1,4 @@
+import type { After, Before, Wrap } from '../http/middleware';
 import { defineRoute } from '../http/route';
 import type { RouteDefinition } from '../http/types';
 import type { ModelDefinition } from '../model/define';
@@ -17,6 +18,18 @@ export {
   createUpdateHandler,
 } from './handlers';
 
+/** Middleware you can attach to any `crud.*` route. */
+export interface CrudRouteOptions {
+  before?: readonly Before[];
+  after?: readonly After[];
+  wrap?: readonly Wrap[];
+}
+
+function withOpts(handler: (m: ModelDefinition) => RouteDefinition['handler']) {
+  return (model: ModelDefinition, opts?: CrudRouteOptions): RouteDefinition =>
+    defineRoute({ handler: handler(model), ...opts });
+}
+
 /**
  * Per-verb `RouteDefinition` builders for use inside a route file.
  * Nothing is registered at runtime; the file itself is the source of
@@ -26,18 +39,15 @@ export {
  * Typical layout:
  *   app/routes/api/posts.ts         → list + create
  *   app/routes/api/posts/[id].ts    → read + update + patch + delete
+ *
+ * Optional `{ before, after, wrap }` plugs in middleware — common
+ * pattern: `crud.create(post, { before: [requireAuth()] })`.
  */
 export const crud = {
-  list: (model: ModelDefinition): RouteDefinition =>
-    defineRoute({ handler: createListHandler(model) }),
-  read: (model: ModelDefinition): RouteDefinition =>
-    defineRoute({ handler: createFindOneHandler(model) }),
-  create: (model: ModelDefinition): RouteDefinition =>
-    defineRoute({ handler: createCreateHandler(model) }),
-  update: (model: ModelDefinition): RouteDefinition =>
-    defineRoute({ handler: createUpdateHandler(model, false) }),
-  patch: (model: ModelDefinition): RouteDefinition =>
-    defineRoute({ handler: createUpdateHandler(model, true) }),
-  remove: (model: ModelDefinition): RouteDefinition =>
-    defineRoute({ handler: createDeleteHandler(model) }),
+  list: withOpts(createListHandler),
+  read: withOpts(createFindOneHandler),
+  create: withOpts(createCreateHandler),
+  update: withOpts((m) => createUpdateHandler(m, false)),
+  patch: withOpts((m) => createUpdateHandler(m, true)),
+  remove: withOpts(createDeleteHandler),
 };

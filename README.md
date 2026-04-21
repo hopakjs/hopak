@@ -1850,6 +1850,180 @@ the file (or rename it) if you really want a fresh template.
 are already present it exits `0` with `Dev certificate already
 exists` (idempotent — safe in setup scripts).
 
+### 23. Log every request (with a correlation id)
+
+**Goal:** one line per request in your logs, plus a correlation id
+you can match against client-side tickets. Both are in `@hopak/core`
+and enable in one command:
+
+```bash
+hopak use request-log
+# → Patched main.ts — requestId() + requestLog() now run on every request
+```
+
+`main.ts` becomes:
+
+```ts
+import { hopak, requestId, requestLog } from '@hopak/core';
+
+await hopak().before(requestId()).after(requestLog()).listen();
+```
+
+On each request you get:
+
+```
+GET /api/posts 200 3ms [0f4b2c…]
+POST /api/auth/login 401 8ms [b1c9ae…] ! bad credentials
+```
+
+The id also rides back as `X-Request-Id` on the response so a client
+and server share the same tag.
+
+Pick the format:
+
+```ts
+// Structured logs (one JSON object per line — great for aggregators):
+.after(requestLog({ format: 'json' }))
+
+// Extra fields per request:
+.after(requestLog({ extra: (ctx) => ({ tenant: ctx.user?.tenantId }) }))
+```
+
+Put the `requestId()` before any middleware that throws — any handler
+or middleware calling `ctx.log.info(...)` after it will carry the id
+implicitly via the request log line. Use a custom generator to swap
+UUIDs for ULIDs:
+
+```ts
+.before(requestId({ generate: () => someUlid() }))
+```
+
+### 24. Add JWT auth (signup, login, `me`, gated routes)
+
+**Goal:** full credential-based auth with a working signup, login,
+and `me` endpoint in one command — plus a `requireAuth()` you can
+drop on any route.
+
+```bash
+hopak use auth
+# → Created app/middleware/auth.ts
+# → Created app/routes/api/auth/signup.ts
+# → Created app/routes/api/auth/login.ts
+# → Created app/routes/api/auth/me.ts
+# → Created app/models/user.ts           (only if you don't already have one)
+# → Added JWT_SECRET to .env.example
+# → bun add @hopak/auth jose
+```
+
+Copy `.env.example` → `.env`, set `JWT_SECRET` (32+ random bytes —
+`openssl rand -hex 32`), then `hopak sync && hopak dev`. The three
+endpoints come up with zero extra code:
+
+```bash
+curl -X POST http://localhost:3000/api/auth/signup \
+  -H 'content-type: application/json' \
+  -d '{"name":"Ada","email":"a@b.com","password":"hunter2hunter"}'
+# → { "user": {...}, "token": "eyJhbGci..." }
+
+curl -X POST http://localhost:3000/api/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"a@b.com","password":"hunter2hunter"}'
+# → { "token": "eyJhbGci..." }
+
+curl http://localhost:3000/api/auth/me \
+  -H 'authorization: Bearer eyJhbGci...'
+# → { "id": 1, "role": null }
+```
+
+Gate any other route with `requireAuth()` from the generated
+middleware file:
+
+```ts
+// app/routes/api/posts.ts
+import { crud } from '@hopak/core';
+import post from '../../models/post';
+import { requireAuth } from '../../middleware/auth';
+
+export const GET = crud.list(post);
+export const POST = crud.create(post, { before: [requireAuth()] });
+```
+
+#### Role-based access
+
+`@hopak/auth` ships `requireRole(...names)` — stack it after
+`requireAuth()`:
+
+```ts
+import { requireRole } from '@hopak/auth';
+import { requireAuth } from '../../middleware/auth';
+
+export const DELETE = crud.remove(post, {
+  before: [requireAuth(), requireRole('admin')],
+});
+// Non-admin → 403 Forbidden
+// No token  → 401 Unauthorized
+// admin     → handler runs
+```
+
+Multiple roles are OR-of: `requireRole('admin', 'editor')`. Add
+custom claims by extending `AuthUser`:
+
+```ts
+// app/middleware/auth.ts
+import 'app/types/auth';
+
+// app/types/auth.ts
+declare module '@hopak/auth' {
+  interface AuthUser {
+    tenantId: number;
+  }
+}
+```
+
+Then pass `claims: ['id', 'role', 'tenantId']` to `jwtAuth({...})`.
+
+#### OAuth (GitHub, Google)
+
+`@hopak/auth/oauth/github` and `/oauth/google` expose matching
+`*Start` / `*Callback` route handlers that share the same
+`signToken` you already have. State is verified statelessly with
+HMAC — no cookie store:
+
+```ts
+// app/routes/api/auth/github/start.ts
+import { defineRoute } from '@hopak/core';
+import { githubStart } from '@hopak/auth/oauth/github';
+
+export const GET = defineRoute({
+  handler: githubStart({
+    callbackUrl: 'http://localhost:3000/api/auth/github/callback',
+    stateSecret: process.env.JWT_SECRET ?? '',
+  }),
+});
+```
+
+```ts
+// app/routes/api/auth/github/callback.ts
+import { defineRoute } from '@hopak/core';
+import { githubCallback } from '@hopak/auth/oauth/github';
+import user from '../../../../models/user';
+import { signToken } from '../../../../middleware/auth';
+
+export const GET = defineRoute({
+  handler: githubCallback({
+    model: user,
+    sign: signToken,
+    stateSecret: process.env.JWT_SECRET ?? '',
+  }),
+});
+```
+
+Set `GITHUB_OAUTH_ID` and `GITHUB_OAUTH_SECRET` in `.env`. New users
+are created with `{ email, name, password: 'oauth:<uuid>' }` by
+default — override with the `createUser` option when your model has
+other required fields. Google works the same way from
+`@hopak/auth/oauth/google`.
+
 ---
 
 ## Models
@@ -2410,8 +2584,16 @@ my-app/
 
 ### `hopak use <capability>`
 
-One command to install a database driver, patch `hopak.config.ts`, and
-augment `.env.example`. Typical flow:
+One command to wire a feature into an existing project — installs
+any extra packages, patches the right files, and adds env keys.
+
+| Capability | Effect |
+|---|---|
+| `sqlite` / `postgres` / `mysql` | Switch database dialect (driver + `hopak.config.ts` block + `.env.example`). |
+| `request-log` | Patch `main.ts` to add `requestId()` + `requestLog()` from `@hopak/core`. See Recipe 23. |
+| `auth` | Install `@hopak/auth`, scaffold `app/middleware/auth.ts`, signup/login/me routes, `JWT_SECRET` in `.env.example`. See Recipe 24. |
+
+Typical DB flow:
 
 ```bash
 hopak new my-app           # starts on SQLite
@@ -2422,13 +2604,13 @@ hopak use postgres         # switches to Postgres
 # → .env.example gains: DATABASE_URL=postgres://user:pass@localhost:5432/myapp
 ```
 
-Then copy `.env.example` → `.env`, fill `DATABASE_URL`, run
+Then copy `.env.example` → `.env`, fill the secrets, run
 `hopak sync`, and `hopak dev`. Nothing in your application code
 changes — the same handlers work across all three dialects.
 
-`hopak use` refuses to overwrite an existing `database:` block (in case
-you've added connection tuning). In that case it prints the snippet to
-paste manually and exits.
+`hopak use` never overwrites a file it didn't generate. If a
+target already exists and looks hand-edited, the command prints the
+snippet to paste manually and exits non-zero — predictable in CI.
 
 ---
 

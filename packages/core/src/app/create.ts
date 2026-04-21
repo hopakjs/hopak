@@ -1,4 +1,4 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { type HopakConfig, type HopakConfigInput, type Logger, createLogger } from '@hopak/common';
 import type { Database } from '../db/client';
@@ -6,6 +6,7 @@ import { createDatabase } from '../db/factory';
 import { translateConnectError } from '../db/sql/connect-translator';
 import { loadDevCert } from '../http/certs';
 import { loadFileRoutes } from '../http/loader';
+import { EMPTY_MIDDLEWARE, type Middleware } from '../http/middleware';
 import { Router } from '../http/router';
 import { type ListeningServer, startServer } from '../http/server';
 import { ModelRegistry } from '../model/registry';
@@ -19,6 +20,8 @@ export interface CreateAppOptions {
   rootDir?: string;
   config?: HopakConfigInput;
   log?: Logger;
+  /** Global middleware — accumulated via `hopak().before/after/wrap()`. */
+  middleware?: Middleware;
 }
 
 export interface HopakApp {
@@ -91,8 +94,8 @@ async function resolveTls(config: HopakConfig, log: Logger): Promise<TlsMaterial
 
   if (https.cert && https.key) {
     const [cert, key] = await Promise.all([
-      readFile(resolveCertPath(https.cert, config), 'utf8'),
-      readFile(resolveCertPath(https.key, config), 'utf8'),
+      Bun.file(resolveCertPath(https.cert, config)).text(),
+      Bun.file(resolveCertPath(https.key, config)).text(),
     ]);
     return { cert, key };
   }
@@ -143,6 +146,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
         staticDir: config.paths.public,
         log,
         db,
+        middleware: options.middleware ?? EMPTY_MIDDLEWARE,
         ...(config.cors ? { cors: config.cors } : {}),
         ...(tls ? { tls } : {}),
       });

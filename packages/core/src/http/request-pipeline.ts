@@ -3,11 +3,19 @@ import type { Server } from 'bun';
 import type { Database } from '../db/client';
 import type { CorsHandler } from './cors';
 import { handleError } from './error-handler';
+import {
+  type After,
+  type Before,
+  EMPTY_MIDDLEWARE,
+  type Middleware,
+  type Wrap,
+} from './middleware';
 import { buildContext } from './request-context';
 import { clientIp, isHttpMethod } from './request-info';
 import { toResponse } from './response';
 import type { Router } from './router';
 import type { StaticHandler } from './static';
+import type { RequestContext, RouteDefinition } from './types';
 
 type Engine = Server<unknown>;
 
@@ -16,6 +24,7 @@ export interface PipelineOptions {
   log: Logger;
   staticHandler: StaticHandler | null;
   cors: CorsHandler | null;
+  globalMiddleware?: Middleware;
   db: Database | undefined;
   exposeStack?: boolean;
 }
@@ -41,54 +50,124 @@ function methodNotAllowedResponse(allowed: readonly string[] = []): Response {
   );
 }
 
+/**
+ * Run the before-chain. Each `Before`:
+ *   - throw → propagates up (outer try/catch turns it into an HTTP response)
+ *   - return Response → short-circuits the whole pipeline with that response
+ *   - return void → continue to the next before / handler
+ */
+async function runBefore(
+  ctx: RequestContext,
+  chain: readonly Before[],
+): Promise<Response | undefined> {
+  for (const step of chain) {
+    const ret = await step(ctx);
+    if (ret instanceof Response) return ret;
+  }
+  return undefined;
+}
+
+/**
+ * Compose `Wrap`s around a core execution function. Outer wraps run
+ * first on entry, last on exit (classic onion). Empty array yields
+ * `core` unchanged.
+ */
+function composeWraps(core: () => Promise<Response>, wraps: readonly Wrap[], ctx: RequestContext) {
+  return wraps.reduceRight<() => Promise<Response>>((inner, wrap) => () => wrap(ctx, inner), core);
+}
+
+async function runAfter(
+  ctx: RequestContext,
+  chain: readonly After[],
+  result: { response?: Response; error?: unknown },
+  log: Logger,
+): Promise<void> {
+  for (const step of chain) {
+    try {
+      await step(ctx, result);
+    } catch (cause) {
+      // After middleware should never crash the response pipeline —
+      // they're observability, not request-path. Log and continue.
+      log.error('After-middleware threw', {
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+}
+
+function mergeChains(
+  global: Middleware,
+  route: Pick<RouteDefinition, 'before' | 'after' | 'wrap'>,
+): Middleware {
+  return {
+    before: [...global.before, ...(route.before ?? [])],
+    // Route `after`s run BEFORE global `after`s — route-level cleanup
+    // first, then process-wide access log.
+    after: [...(route.after ?? []), ...global.after],
+    wrap: [...global.wrap, ...(route.wrap ?? [])],
+  };
+}
+
 export function createRequestHandler(options: PipelineOptions) {
   const { router, log, staticHandler, cors, db, exposeStack } = options;
+  const globals = options.globalMiddleware ?? EMPTY_MIDDLEWARE;
 
   const decorate = (req: Request, response: Response): Response =>
     cors ? cors.apply(req, response) : response;
 
   return async function handle(req: Request, engine: Engine): Promise<Response> {
-    try {
-      if (cors) {
-        const preflight = cors.preflight(req);
-        if (preflight) return preflight;
-      }
+    if (cors) {
+      const preflight = cors.preflight(req);
+      if (preflight) return preflight;
+    }
 
-      const method = req.method.toUpperCase();
-      if (!isHttpMethod(method)) return methodNotAllowedResponse();
+    const method = req.method.toUpperCase();
+    if (!isHttpMethod(method)) return methodNotAllowedResponse();
 
-      const url = new URL(req.url);
-      const match = router.match(method, url.pathname);
+    const url = new URL(req.url);
+    const match = router.match(method, url.pathname);
 
-      if (match) {
-        const ip = clientIp(req, engine);
-        const { ctx, responseInit } = buildContext({
-          req,
-          url,
-          method,
-          params: match.params,
-          log,
-          ip,
-          db,
-        });
-        const result = await match.route.definition.handler(ctx);
-        return decorate(req, toResponse(result, responseInit));
-      }
-
+    if (!match) {
       if (STATIC_METHODS.has(method) && staticHandler) {
         const staticResponse = await staticHandler.serve(url);
         if (staticResponse) return decorate(req, staticResponse);
       }
-
-      // The path has handlers under other verbs — `405` with an `Allow`
-      // header is the correct surface, not `404`. Browsers and proxies
-      // (CORS preflight, caches) rely on this distinction.
       const allowed = router.allowedMethods(url.pathname);
       if (allowed.length > 0) return decorate(req, methodNotAllowedResponse(allowed));
-
       return decorate(req, notFoundResponse(method, url.pathname));
-    } catch (cause) {
-      return decorate(req, handleError(cause, { log, exposeStack }));
     }
+
+    const ip = clientIp(req, engine);
+    const { ctx, responseInit } = buildContext({
+      req,
+      url,
+      method,
+      params: match.params,
+      log,
+      ip,
+      db,
+    });
+
+    const chains = mergeChains(globals, match.route.definition);
+
+    let response: Response;
+    let error: unknown;
+
+    try {
+      const core = async (): Promise<Response> => {
+        const short = await runBefore(ctx, chains.before);
+        if (short) return short;
+        const result = await match.route.definition.handler(ctx);
+        return toResponse(result, responseInit);
+      };
+      const execute = composeWraps(core, chains.wrap, ctx);
+      response = await execute();
+    } catch (cause) {
+      error = cause;
+      response = handleError(cause, { log, exposeStack });
+    }
+
+    await runAfter(ctx, chains.after, { response, error }, log);
+    return decorate(req, response);
   };
 }

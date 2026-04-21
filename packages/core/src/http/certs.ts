@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { ConfigError, type Logger, pathExists } from '@hopak/common';
 
@@ -34,7 +34,7 @@ export function certFileLocations(certDir: string): CertFileLocations {
 }
 
 async function readCertPair(keyPath: string, certPath: string): Promise<CertPair> {
-  const [key, cert] = await Promise.all([readFile(keyPath, 'utf8'), readFile(certPath, 'utf8')]);
+  const [key, cert] = await Promise.all([Bun.file(keyPath).text(), Bun.file(certPath).text()]);
   return { key, cert };
 }
 
@@ -78,7 +78,7 @@ async function runOpenssl(keyPath: string, certPath: string, hostname: string): 
 
 async function writeCertGitignore(certDir: string, log: Logger | undefined): Promise<void> {
   try {
-    await writeFile(join(certDir, '.gitignore'), GITIGNORE_CONTENTS, 'utf8');
+    await Bun.write(join(certDir, '.gitignore'), GITIGNORE_CONTENTS);
   } catch (cause) {
     log?.warn('Failed to write .gitignore in cert directory', {
       path: certDir,

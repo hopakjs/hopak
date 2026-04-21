@@ -303,11 +303,11 @@ export default defineRoute({ handler: () => ({ ok: true }) });
     expect(router.match('GET', '/health')).not.toBeNull();
   });
 
-  test('reports error for file with no route exports', async () => {
-    await writeFileRoute('routes/nothing.ts', 'export const helper = () => 1;\n');
+  test('files with no route exports are skipped (treated as helpers)', async () => {
+    await writeFileRoute('routes/helper.ts', 'export const guard = [() => {}];\n');
     const router = new Router();
     const result = await loadFileRoutes({ routesDir: join(workDir, 'routes'), router });
     expect(result.routes).toBe(0);
-    expect(result.errors).toHaveLength(1);
+    expect(result.errors).toHaveLength(0);
   });
 });

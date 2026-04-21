@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { type Logger, pathExists } from '@hopak/common';
 import { generateDevCert } from '@hopak/core';
@@ -37,7 +37,7 @@ async function emitFiles(log: Logger, files: readonly EmittedFile[]): Promise<nu
   }
   for (const file of files) {
     await mkdir(dirname(file.path), { recursive: true });
-    await writeFile(file.path, file.contents, 'utf8');
+    await Bun.write(file.path, file.contents);
     log.info('Created file', { path: file.path });
   }
   return 0;

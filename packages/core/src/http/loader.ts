@@ -52,6 +52,7 @@ async function loadOneFile(
   fullPath: string,
   pattern: string,
   router: Router,
+  log: Logger | undefined,
 ): Promise<{ registered: number; errors: RouteLoadError[] }> {
   const errors: RouteLoadError[] = [];
   const mod = (await import(fullPath)) as Record<string, unknown>;
@@ -74,10 +75,20 @@ async function loadOneFile(
   }
 
   if (registered === 0) {
-    errors.push({
-      file: fullPath,
-      message: 'No route exported. Use `export const GET = defineRoute({...})` or default export.',
-    });
+    // Nothing to register — treat as a plain TS module sitting in
+    // app/routes/ so sibling route files can import it. But if it
+    // exports a defineRoute() under some non-verb name, the user
+    // probably meant to make it a route, so surface that.
+    const verbs = HTTP_METHODS as readonly string[];
+    for (const [name, value] of Object.entries(mod)) {
+      if (name === 'default' || verbs.includes(name)) continue;
+      if (isRouteDefinition(value)) {
+        log?.warn(
+          `${fullPath}: export "${name}" is a defineRoute() — rename to GET/POST/PUT/PATCH/DELETE to register it.`,
+        );
+        break;
+      }
+    }
   }
 
   return { registered, errors };
@@ -99,7 +110,7 @@ export async function loadFileRoutes(options: RouteLoaderOptions): Promise<Route
     const pattern = filePathToPattern(relative(dir, fullPath));
 
     try {
-      const outcome = await loadOneFile(fullPath, pattern, options.router);
+      const outcome = await loadOneFile(fullPath, pattern, options.router, options.log);
       result.routes += outcome.registered;
       result.errors.push(...outcome.errors);
       if (outcome.registered > 0) {

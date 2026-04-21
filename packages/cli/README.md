@@ -18,7 +18,7 @@ runtime to materialize code or crypto on your behalf.
   - [hopak new](#hopak-new-name)
   - [hopak dev](#hopak-dev)
   - [hopak generate](#hopak-generate-kind-name)
-  - [hopak use](#hopak-use-dialect)
+  - [hopak use](#hopak-use-capability)
   - [hopak sync](#hopak-sync)
   - [hopak check](#hopak-check)
   - [hopak --version / --help](#hopak---version----help)
@@ -254,11 +254,30 @@ already exists the command fails with exit code `1`. `generate cert`
 is the exception — it's idempotent and exits `0` when the files are
 already there.
 
-### `hopak use <dialect>`
+### `hopak use <capability>`
 
-Switches an existing project from one dialect to another: installs
-the driver (`postgres` / `mysql2`), rewrites the `database:` block in
-`hopak.config.ts`, and adds `DATABASE_URL` to `.env.example`.
+Enables a capability in an existing project. One command installs
+any packages, patches the right files, and adds env keys.
+
+Run with no arguments to see what's available:
+
+```bash
+hopak use
+# Usage: hopak use <capability>
+#
+# Available:
+#   sqlite       SQLite via bun:sqlite (default, zero install)
+#   postgres     Postgres via postgres.js
+#   mysql        MySQL via mysql2
+#   request-log  Per-request logging — tags each request with an id and logs method/path/status/ms
+#   auth         JWT auth — signup/login/me routes + requireAuth() middleware
+```
+
+#### Database dialects — `sqlite` / `postgres` / `mysql`
+
+Switch dialects: installs the driver (`postgres` / `mysql2`),
+rewrites the `database:` block in `hopak.config.ts`, and adds
+`DATABASE_URL` to `.env.example`.
 
 ```bash
 hopak use postgres
@@ -273,6 +292,61 @@ paste and exits `1`, so tuning is never silently discarded.
 
 For a brand-new project, prefer `hopak new <name> --db <dialect>` —
 it's one fewer step.
+
+#### `request-log`
+
+Patches `main.ts` so every request gets a correlation id and a log
+line. Goes from:
+
+```ts
+import { hopak } from '@hopak/core';
+
+await hopak().listen();
+```
+
+to:
+
+```ts
+import { hopak, requestId, requestLog } from '@hopak/core';
+
+await hopak().before(requestId()).after(requestLog()).listen();
+```
+
+Subsequent runs detect that `requestId` + `requestLog` are already
+in the chain (by factory name, not exact call) and report
+`Already using request-log` — safe to run in setup scripts. If
+`main.ts` has drifted from the template, the patcher refuses and
+prints the snippet to paste.
+
+See the core README recipe for format options (`'simple'` / `'json'`)
+and custom id generators.
+
+#### `auth`
+
+Scaffolds JWT credential auth in one command. Creates:
+
+```
+app/middleware/auth.ts           # exports requireAuth + signToken
+app/routes/api/auth/signup.ts    # POST /api/auth/signup
+app/routes/api/auth/login.ts     # POST /api/auth/login
+app/routes/api/auth/me.ts        # GET /api/auth/me (requires token)
+app/models/user.ts               # created only if you don't already have one
+```
+
+It also adds `JWT_SECRET` to `.env.example` and runs
+`bun add @hopak/auth jose`.
+
+```bash
+hopak use auth
+# → files created, deps installed
+# → next: copy .env.example → .env, set JWT_SECRET,
+#         hopak sync, hopak dev
+```
+
+If any scaffolded file already exists, the command refuses to
+overwrite it and prints the snippet so you can merge by hand. See
+the `@hopak/auth` README for full API (OAuth providers, RBAC, claim
+extension).
 
 ### `hopak sync`
 

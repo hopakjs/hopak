@@ -1,13 +1,14 @@
 # Releasing
 
-Hopak publishes four packages together under `@hopak/*`:
+Hopak publishes five packages under `@hopak/*`:
 
 - `@hopak/common`
 - `@hopak/core`
+- `@hopak/auth`
 - `@hopak/testing`
 - `@hopak/cli`
 
-All packages share one version. A release publishes them as a set.
+Each package is versioned independently — a release only publishes the packages whose `version` field changed since the last tag. See `.github/workflows/release.yml` for the detect-and-publish logic.
 
 ## Prerequisites (one-time)
 

@@ -21,8 +21,8 @@ Commands:
                           model | route | crud | cert
   sync                    Apply model schema to the database (CREATE TABLE IF NOT EXISTS)
   check                   Audit project state (config, models, routes)
-  use <capability>        Switch DB dialect in an existing project
-                          (sqlite, postgres, mysql)
+  use <capability>        Enable a capability in an existing project
+                          (sqlite, postgres, mysql, request-log, auth)
   --help, -h              Show this help
   --version, -v           Show version
 
@@ -36,6 +36,8 @@ Examples:
   hopak generate cert           # dev HTTPS key + self-signed cert
   hopak sync
   hopak use postgres
+  hopak use request-log
+  hopak use auth
 `;
 
 const SUPPORTED_DIALECTS: readonly DbDialect[] = ['sqlite', 'postgres', 'mysql'];
@@ -118,7 +120,7 @@ const COMMANDS: Record<string, Command> = {
     run: ({ log }) => runCheck({ log }),
   },
   use: {
-    describe: 'Enable a capability (sqlite, postgres, mysql)',
+    describe: 'Enable a capability (sqlite, postgres, mysql, request-log, auth)',
     run: ({ args, log }) => runUse({ name: args[0], log }),
   },
 };

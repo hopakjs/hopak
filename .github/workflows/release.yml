@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           echo "Package status vs. npm:"
           printf '%-20s %-10s %-10s %s\n' 'name' 'local' 'remote' 'action'
-          for pkg in packages/common packages/core packages/testing packages/cli; do
+          for pkg in packages/common packages/core packages/auth packages/testing packages/cli; do
             NAME=$(jq -r .name "$pkg/package.json")
             LOCAL=$(jq -r .version "$pkg/package.json")
             REMOTE=$(npm view "$NAME" version 2>/dev/null || echo "-")
@@ -147,10 +147,10 @@ jobs:
           fi
           PUBLISHED=0
           SKIPPED=0
-          # Order matters: common before core before {testing, cli} so that
-          # a dependent published in the same run pulls a just-published
+          # Order matters: common before core before {auth, testing, cli} so
+          # that a dependent published in the same run pulls a just-published
           # dep from npm rather than 404'ing.
-          for pkg in packages/common packages/core packages/testing packages/cli; do
+          for pkg in packages/common packages/core packages/auth packages/testing packages/cli; do
             NAME=$(jq -r .name "$pkg/package.json")
             LOCAL=$(jq -r .version "$pkg/package.json")
             REMOTE=$(npm view "$NAME" version 2>/dev/null || echo "-")

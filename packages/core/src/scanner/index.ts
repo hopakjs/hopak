@@ -69,18 +69,25 @@ export class Scanner {
 
   private async loadFile(fullPath: string, result: ScanResult): Promise<void> {
     try {
-      const mod = (await import(fullPath)) as { default?: unknown };
-      if (!isModelDefinition(mod.default)) {
-        result.errors.push({
-          file: fullPath,
-          message: 'File does not export a model() as default export',
-        });
-        this.log?.warn('Skipping non-model file', { file: fullPath });
+      const mod = (await import(fullPath)) as Record<string, unknown>;
+      if (isModelDefinition(mod.default)) {
+        this.registry.register(mod.default);
+        result.models += 1;
+        this.log?.debug('Registered model', { name: mod.default.name, file: fullPath });
         return;
       }
-      this.registry.register(mod.default);
-      result.models += 1;
-      this.log?.debug('Registered model', { name: mod.default.name, file: fullPath });
+
+      // No default model — file's just a helper module co-located with
+      // real models. Fine, unless it exports a model() under a non-default
+      // name, which is almost always an oversight.
+      for (const [name, value] of Object.entries(mod)) {
+        if (name !== 'default' && isModelDefinition(value)) {
+          this.log?.warn(
+            `${fullPath}: model() exported as "${name}" — rename to default export to register it.`,
+          );
+          break;
+        }
+      }
     } catch (cause) {
       const message = errorMessage(cause);
       result.errors.push({ file: fullPath, message, cause });

@@ -1,4 +1,3 @@
-import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathExists } from '@hopak/common';
 import { type Dialect, buildDatabaseBlock, detectDialect, patchConfig } from './config-patcher';
@@ -27,7 +26,7 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
     async isInstalled(ctx) {
       const configPath = join(ctx.root, 'hopak.config.ts');
       if (!(await pathExists(configPath))) return false;
-      const source = await readFile(configPath, 'utf8');
+      const source = await Bun.file(configPath).text();
       return detectDialect(source) === dialect;
     },
 
@@ -40,7 +39,7 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
         };
       }
 
-      const configSource = await readFile(configPath, 'utf8');
+      const configSource = await Bun.file(configPath).text();
       const patch = patchConfig(configSource, dialect);
 
       switch (patch.status) {
@@ -73,7 +72,7 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
       }
 
       // 2. Write the updated config.
-      await writeFile(configPath, patch.updated, 'utf8');
+      await Bun.write(configPath, patch.updated);
       if (patch.status === 'replaced') {
         ctx.log.info(`Replaced database block in hopak.config.ts (${patch.previous} → ${dialect})`);
       } else {
@@ -83,10 +82,10 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
       // 3. Augment .env.example (Postgres / MySQL only).
       const envExamplePath = join(ctx.root, '.env.example');
       if (await pathExists(envExamplePath)) {
-        const envSource = await readFile(envExamplePath, 'utf8');
+        const envSource = await Bun.file(envExamplePath).text();
         const updated = patchEnvExample(envSource, dialect);
         if (updated !== null) {
-          await writeFile(envExamplePath, updated, 'utf8');
+          await Bun.write(envExamplePath, updated);
           ctx.log.info('Added DATABASE_URL to .env.example');
         }
       }

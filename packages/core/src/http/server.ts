@@ -2,6 +2,7 @@ import { type Logger, createLogger } from '@hopak/common';
 import type { Database } from '../db/client';
 import { createCorsHandler } from './cors';
 import { DEFAULT_HOST, DEFAULT_PORT, DISPLAY_HOST } from './defaults';
+import { EMPTY_MIDDLEWARE, type Middleware } from './middleware';
 import { createRequestHandler } from './request-pipeline';
 import { Router } from './router';
 import { createStaticHandler } from './static';
@@ -13,6 +14,8 @@ export interface StartServerOptions {
   router?: Router;
   staticDir?: string;
   cors?: { origins: string[] | '*'; credentials?: boolean };
+  /** Global middleware accumulated via `hopak().before/after/wrap()`. */
+  middleware?: Middleware;
   db?: Database;
   exposeStack?: boolean;
   tls?: { key: string; cert: string };
@@ -45,6 +48,7 @@ export async function startServer(options: StartServerOptions): Promise<Listenin
     log,
     staticHandler,
     cors,
+    globalMiddleware: options.middleware ?? EMPTY_MIDDLEWARE,
     db: options.db,
     exposeStack: options.exposeStack,
   });

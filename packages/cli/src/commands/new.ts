@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { type DbDialect, type Logger, pathExists } from '@hopak/common';
 import { projectTemplate } from '../templates';
@@ -27,7 +27,7 @@ export async function runNew(options: NewCommandOptions): Promise<number> {
   for (const [relativePath, contents] of Object.entries(template.files)) {
     const fullPath = join(target, relativePath);
     await mkdir(dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, contents, 'utf8');
+    await Bun.write(fullPath, contents);
   }
 
   options.log.info(`Created ${options.name}`, { path: target });

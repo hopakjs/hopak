@@ -1,5 +1,7 @@
 import type { Logger } from '@hopak/common';
+import { authHandler } from './auth-handler';
 import { dbDialectHandler } from './db-dialect';
+import { requestLogHandler } from './request-log-handler';
 
 export interface UseContext {
   root: string;
@@ -33,9 +35,14 @@ export const CAPABILITIES: Record<string, UseHandler> = {
     driverPkg: 'mysql2',
     driverVersion: '^3.11.0',
   }),
+  'request-log': requestLogHandler,
+  auth: authHandler,
 };
 
 export function listCapabilities(): string {
-  const rows = Object.values(CAPABILITIES).map((h) => `  ${h.name.padEnd(10)} ${h.description}`);
+  const width = Math.max(...Object.values(CAPABILITIES).map((h) => h.name.length));
+  const rows = Object.values(CAPABILITIES).map(
+    (h) => `  ${h.name.padEnd(width)}  ${h.description}`,
+  );
   return `Usage: hopak use <capability>\n\nAvailable:\n${rows.join('\n')}\n`;
 }

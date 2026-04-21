@@ -1,7 +1,9 @@
+import type { Logger } from '@hopak/common';
 import {
   type Database,
   type HopakApp,
   type ListeningServer,
+  type Middleware,
   type ModelDefinition,
   Router,
   createApp,
@@ -24,6 +26,10 @@ export interface TestServerOptions {
    */
   models?: readonly ModelDefinition[];
   router?: Router;
+  /** Global middleware (before/after/wrap) applied to every request. */
+  middleware?: Middleware;
+  /** Override the logger — useful for capturing output in tests. */
+  log?: Logger;
   exposeStack?: boolean;
   staticDir?: string;
 }
@@ -78,6 +84,8 @@ async function createInMemoryServer(options: TestServerOptions): Promise<TestSer
     port: 0,
     router,
     ...(db ? { db } : {}),
+    ...(options.middleware ? { middleware: options.middleware } : {}),
+    ...(options.log ? { log: options.log } : {}),
     ...(options.staticDir !== undefined ? { staticDir: options.staticDir } : {}),
     ...(options.exposeStack !== undefined ? { exposeStack: options.exposeStack } : {}),
   });

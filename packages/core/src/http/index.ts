@@ -1,4 +1,6 @@
 export * from './types';
+export * from './middleware';
+export * from './request-log';
 export * from './route';
 export * from './router';
 export * from './loader';

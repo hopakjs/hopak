@@ -99,6 +99,8 @@ interface TestServerOptions {
   rootDir?: string;                      // scan a full project (mutually exclusive with models/router)
   models?: readonly ModelDefinition[];   // in-memory SQLite opens + syncs
   router?: Router;                       // pre-populated with routes
+  middleware?: Middleware;               // global before/after/wrap for every request
+  log?: Logger;                          // override logger — useful for capturing output
   staticDir?: string;                    // path to a public/ directory
   exposeStack?: boolean;                 // include stack traces in 500 responses
 }
@@ -121,6 +123,15 @@ declare function createTestServer(options?: TestServerOptions): Promise<TestServ
 - **`rootDir`** — boot a full project from disk. Scans models + file routes using the same pipeline as `hopak dev`. Mutually exclusive with `models` / `router` (the constructor throws if you pass both).
 - **`models`** — array of `ModelDefinition`s. When provided, an in-memory SQLite database is opened and `db.sync()` runs so you can call `env.db.model('post').create(...)` inside tests.
 - **`router`** — use your own `Router` (pre-registered with routes via `crud.*` or `defineRoute`) instead of the default empty one.
+- **`middleware`** — `{ before, after, wrap }` applied to every request, same shape as `hopak().before(...).after(...).wrap(...)` in production. Test global middleware (request-log, auth) in isolation:
+  ```ts
+  import { requestLog } from '@hopak/core';
+  env = await createTestServer({
+    router,
+    middleware: { before: [], after: [requestLog()], wrap: [] },
+  });
+  ```
+- **`log`** — swap the logger to capture output. Pair with a stub logger in tests that assert on log lines (see `@hopak/core` request-log tests for an example).
 - **`staticDir`** — directory to serve under the root (for static-file tests).
 - **`exposeStack: true`** — include the stack trace in 500 responses. Handy when debugging a test that triggered a server-side error.
 

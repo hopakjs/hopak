@@ -1784,6 +1784,47 @@ Error: File already exists: app/models/comment.ts
 
 Exit code `1` — safe to run from npm scripts or Makefiles. Delete the file (or rename it) if you really want a fresh template. `generate cert` is the exception: if both `dev.key` and `dev.crt` exist it exits `0` (idempotent — safe in setup scripts).
 
+### 23. Log every request (with a correlation id)
+
+**Goal:** one line per request, plus a correlation id echoed back
+to the client. Both helpers ship with `@hopak/core`:
+
+```bash
+hopak use request-log
+# → Patched main.ts — requestId() + requestLog() now run on every request
+```
+
+```ts
+// main.ts
+import { hopak, requestId, requestLog } from '@hopak/core';
+
+await hopak().before(requestId()).after(requestLog()).listen();
+```
+
+On each request:
+
+```
+GET /api/posts 200 3ms [0f4b2c…]
+POST /api/auth/login 401 8ms [b1c9ae…] ! bad credentials
+```
+
+The same id is set on `ctx.requestId` (so your own `ctx.log.*` calls
+can include it) and sent back as `X-Request-Id` on the response.
+
+Switch to structured logs (`format: 'json'`) or attach extra fields
+per request:
+
+```ts
+.after(requestLog({ format: 'json' }))
+.after(requestLog({ extra: (ctx) => ({ tenant: ctx.user?.tenantId }) }))
+```
+
+Swap the generator for ULIDs or any id scheme you like:
+
+```ts
+.before(requestId({ generate: () => someUlid() }))
+```
+
 ---
 
 ## Models
@@ -1912,6 +1953,26 @@ export const POST = defineRoute({ handler: async (ctx) => { /* … */ } });
 Removed verbs simply disappear — the router answers `405 Method Not
 Allowed` with an `Allow:` header listing what remains.
 
+### Gate a CRUD verb with middleware
+
+Each `crud.*` helper takes an optional second argument with
+`before`, `after`, `wrap`:
+
+```ts
+import { crud } from '@hopak/core';
+import { requireAuth, requireRole } from '@hopak/auth';
+import post from '../../models/post';
+
+export const GET = crud.list(post);
+export const POST = crud.create(post, { before: [requireAuth()] });
+export const DELETE = crud.remove(post, {
+  before: [requireAuth(), requireRole('admin')],
+});
+```
+
+Options apply only to that verb. See the Middleware section below
+for the full `Before` / `After` / `Wrap` contract.
+
 ---
 
 ## Routes
@@ -1948,6 +2009,118 @@ export const POST = defineRoute({
 
 A `default` export is treated as `GET`.
 
+Every `defineRoute({...})` accepts optional `before`, `after`, `wrap`
+middleware alongside `handler` (see Middleware below):
+
+```ts
+export const POST = defineRoute({
+  before: [requireAuth()],
+  after: [audit],
+  handler: async (ctx) => { /* … */ },
+});
+```
+
+---
+
+## Middleware
+
+Three hooks for the request pipeline. Typed functions, not a
+Koa-style `(ctx, next)` chain — no `next()` to forget.
+
+```ts
+type Before = (ctx: RequestContext) =>
+  Promise<Response | void> | Response | void;
+
+type After = (
+  ctx: RequestContext,
+  result: { response?: Response; error?: unknown },
+) => Promise<void> | void;
+
+type Wrap = (
+  ctx: RequestContext,
+  run: () => Promise<Response>,
+) => Promise<Response>;
+```
+
+- **`Before`** — runs before the handler. Throw a `HopakError` to
+  short-circuit with that status. Return a `Response` to short-circuit
+  with that response. Return nothing to continue. Mutations to `ctx`
+  flow through (e.g. `ctx.user = ...`). Right place for auth,
+  rate-limiting, request-id.
+- **`After`** — runs after the handler (or error), with the final
+  response. Cannot change the response — read-only. Use for access
+  logs, metrics, audit trails. If it throws, the error is logged and
+  the request still completes.
+- **`Wrap`** — wraps handler execution (plus route-level `before`s).
+  `run()` produces the response. Use this only when observation
+  isn't enough — per-request transactions, request-scoped caches,
+  correlation-id propagation in `async_hooks`.
+
+### Where to register
+
+Two scopes — global (every request) and per-route:
+
+```ts
+// main.ts — global
+import { hopak, requestId, requestLog } from '@hopak/core';
+
+await hopak()
+  .before(requestId())
+  .after(requestLog())
+  .wrap(async (_ctx, run) => run())  // rarely needed
+  .listen();
+```
+
+```ts
+// app/routes/api/posts.ts — per-route
+export const POST = defineRoute({
+  before: [requireAuth()],
+  after: [audit],
+  handler: async (ctx) => { /* … */ },
+});
+```
+
+`crud.*` helpers take the same options as a second argument —
+see CRUD → Gate a CRUD verb.
+
+### Execution order
+
+For one request:
+
+```
+global.before[]  →  wrap[]  →  route.before[]  →  handler
+                                (throw or return Response short-circuits)
+route.after[]    →  global.after[]
+```
+
+`Wrap`s nest — the outer-most runs first on entry, last on exit
+(like onion layers).
+
+### `hopak().before/.after/.wrap` is frozen after `listen()`
+
+Registering middleware after the server starts throws:
+
+```ts
+const app = hopak();
+await app.listen();
+app.before(requestId());
+// Error: hopak().before(): cannot register middleware
+//        after listen() — add it before starting the server.
+```
+
+This protects against half-applied middleware on live requests.
+
+### Built-in: `requestId()` + `requestLog()`
+
+See Recipe 23 for the full walkthrough. One command enables both:
+`hopak use request-log`.
+
+### `EMPTY_MIDDLEWARE`
+
+Exported sentinel for `{ before: [], after: [], wrap: [] }`. Useful
+if you compose your own `Middleware` object and want an explicit
+empty default.
+
 ---
 
 ## Request context
@@ -1964,6 +2137,8 @@ defineRoute({
     ctx.query;              // URLSearchParams
     ctx.headers;            // Request headers
     ctx.ip;                 // string | undefined
+    ctx.startedAt;          // number — request start (Date.now()), used for duration
+    ctx.requestId;          // string | undefined — set if requestId() middleware ran
 
     const body = await ctx.body();   // parsed JSON
     const raw  = await ctx.text();   // raw body
@@ -1979,6 +2154,10 @@ defineRoute({
   },
 });
 ```
+
+Plug-in packages extend `ctx` via module augmentation — `@hopak/auth`
+adds `ctx.user?: AuthUser` when `requireAuth()` runs; custom plug-ins
+follow the same pattern.
 
 Return values are serialized:
 - `Response` instance → returned as-is
@@ -2321,8 +2500,18 @@ my-app/
 
 ### `hopak use <capability>`
 
-One command to install a database driver, patch `hopak.config.ts`, and
-augment `.env.example`. Typical flow:
+One command to wire a feature into an existing project — installs
+extra packages, patches the right files, and adds env keys.
+
+| Capability | Effect |
+|---|---|
+| `sqlite` / `postgres` / `mysql` | Switch database dialect (driver + `hopak.config.ts` block + `.env.example`). |
+| `request-log` | Patch `main.ts` to add `requestId()` + `requestLog()` from `@hopak/core`. See Recipe 23. |
+| `auth` | Install `@hopak/auth`, scaffold `app/middleware/auth.ts`, signup/login/me routes, `JWT_SECRET` in `.env.example`. See Recipe 24. |
+
+Run `hopak use` with no args for the up-to-date list.
+
+Typical DB flow:
 
 ```bash
 hopak new my-app           # starts on SQLite
@@ -2333,13 +2522,13 @@ hopak use postgres         # switches to Postgres
 # → .env.example gains: DATABASE_URL=postgres://user:pass@localhost:5432/myapp
 ```
 
-Then copy `.env.example` → `.env`, fill `DATABASE_URL`, run
-`hopak sync`, and `hopak dev`. Nothing in your application code
-changes — the same handlers work across all three dialects.
+Then copy `.env.example` → `.env`, fill secrets, run `hopak sync`,
+and `hopak dev`. Nothing in your application code changes — the
+same handlers work across all three dialects.
 
-`hopak use` refuses to overwrite an existing `database:` block (in case
-you've added connection tuning). In that case it prints the snippet to
-paste manually and exits.
+`hopak use` never overwrites a file it didn't generate. If a target
+already exists and looks hand-edited, the command prints the snippet
+to paste manually and exits non-zero — predictable in CI.
 
 ---
 
