@@ -1,12 +1,8 @@
 import type { FieldBuilder, FieldDefinition, InferFields } from '../fields/base';
 
 export interface ModelOptions {
-  owner?: string;
-  publicRead?: boolean;
-  auth?: boolean;
+  /** Emit `created_at` + `updated_at` columns (default: true). */
   timestamps?: boolean;
-  softDelete?: boolean;
-  crud?: boolean;
 }
 
 type AnyFieldMap = Record<string, FieldBuilder<unknown, boolean>>;
@@ -14,7 +10,7 @@ type AnyFieldMap = Record<string, FieldBuilder<unknown, boolean>>;
 export interface ModelDefinition<TFields extends AnyFieldMap = AnyFieldMap> {
   readonly name: string;
   readonly fields: { [K in keyof TFields]: FieldDefinition };
-  readonly options: Required<Pick<ModelOptions, 'timestamps' | 'crud'>> & ModelOptions;
+  readonly options: Required<ModelOptions>;
   readonly __fields: TFields;
 }
 
@@ -27,16 +23,10 @@ export function model<TFields extends AnyFieldMap>(
     Object.entries(fields).map(([key, builder]) => [key, builder.build()]),
   ) as { [K in keyof TFields]: FieldDefinition };
 
-  const resolvedOptions = {
-    timestamps: true,
-    crud: false,
-    ...options,
-  };
-
   return {
     name,
     fields: built,
-    options: resolvedOptions,
+    options: { timestamps: true, ...options },
     __fields: fields,
   };
 }

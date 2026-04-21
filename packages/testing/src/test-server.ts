@@ -6,7 +6,6 @@ import {
   Router,
   createApp,
   createDatabase,
-  registerCrudRoutes,
   startServer,
 } from '@hopak/core';
 import { type JsonClient, createJsonClient } from './json-client';
@@ -14,15 +13,19 @@ import { type JsonClient, createJsonClient } from './json-client';
 export interface TestServerOptions {
   /**
    * Boot the server exactly like `hopak dev` would — scan models in
-   * `<rootDir>/app/models`, load file routes from `<rootDir>/app/routes`,
-   * register auto-CRUD. Mutually exclusive with `models` / `router`.
+   * `<rootDir>/app/models`, load file routes from `<rootDir>/app/routes`.
+   * Mutually exclusive with `models` / `router`.
    */
   rootDir?: string;
+  /**
+   * Models to sync to an ephemeral SQLite db. Pair with `router` that
+   * references the same `ModelDefinition`s via the `crud.*` helpers if
+   * you want REST endpoints — nothing auto-registers anymore.
+   */
   models?: readonly ModelDefinition[];
   router?: Router;
   exposeStack?: boolean;
   staticDir?: string;
-  withCrud?: boolean;
 }
 
 export interface TestServer {
@@ -70,9 +73,6 @@ async function createInMemoryServer(options: TestServerOptions): Promise<TestSer
   const router = options.router ?? new Router();
   const db = options.models ? createDatabase({ dialect: 'sqlite', models: options.models }) : null;
   if (db) await db.sync();
-  if (db && options.withCrud && options.models) {
-    registerCrudRoutes({ router, db, models: options.models });
-  }
 
   const server = await startServer({
     port: 0,

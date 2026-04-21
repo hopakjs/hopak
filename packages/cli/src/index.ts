@@ -1,4 +1,4 @@
-import { type Logger, createLogger } from '@hopak/common';
+import { type DbDialect, type Logger, createLogger } from '@hopak/common';
 import { runCheck } from './commands/check';
 import { runDev } from './commands/dev';
 import { runGenerate } from './commands/generate';
@@ -13,23 +13,52 @@ Usage: hopak <command> [args]
 
 Commands:
   new <name>              Create a new Hopak project (runs bun install)
+    --db <sqlite|postgres|mysql>
+                          Preconfigure dialect (default: sqlite)
     --no-install          Skip dependency install (useful for CI / offline)
   dev                     Start dev server (hot reload)
-  generate <kind> <name>  Scaffold a model or route
+  generate <kind> <name>  Scaffold files:
+                          model | route | crud
   sync                    Apply model schema to the database (CREATE TABLE IF NOT EXISTS)
   check                   Audit project state (config, models, routes)
-  use <capability>        Enable a capability (sqlite, postgres, mysql)
+  use <capability>        Switch DB dialect in an existing project
+                          (sqlite, postgres, mysql)
   --help, -h              Show this help
   --version, -v           Show version
 
 Examples:
   hopak new my-app
+  hopak new my-app --db postgres
   hopak dev
   hopak generate model post
+  hopak generate crud post
   hopak generate route posts/[id]
   hopak sync
   hopak use postgres
 `;
+
+const SUPPORTED_DIALECTS: readonly DbDialect[] = ['sqlite', 'postgres', 'mysql'];
+
+function parseDialectFlag(args: readonly string[], log: Logger): DbDialect | 'invalid' | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (!a) continue;
+    let value: string | undefined;
+    if (a === '--db' || a === '--dialect') value = args[i + 1];
+    else if (a.startsWith('--db=')) value = a.slice(5);
+    else if (a.startsWith('--dialect=')) value = a.slice(10);
+    else continue;
+
+    if (!value || !SUPPORTED_DIALECTS.includes(value as DbDialect)) {
+      log.error(
+        `Invalid --db value: '${value ?? ''}'. Supported: ${SUPPORTED_DIALECTS.join(', ')}.`,
+      );
+      return 'invalid';
+    }
+    return value as DbDialect;
+  }
+  return undefined;
+}
 
 interface CommandContext {
   args: readonly string[];
@@ -48,11 +77,20 @@ const COMMANDS: Record<string, Command> = {
       const positional = args.filter((a) => !a.startsWith('--'));
       const name = positional[0];
       if (!name) {
-        log.error('Missing project name. Usage: hopak new <name> [--no-install]');
+        log.error(
+          'Missing project name. Usage: hopak new <name> [--db sqlite|postgres|mysql] [--no-install]',
+        );
         return Promise.resolve(1);
       }
+      const dialect = parseDialectFlag(args, log);
+      if (dialect === 'invalid') return Promise.resolve(1);
       const noInstall = args.includes('--no-install');
-      return runNew({ name, log, noInstall });
+      return runNew({
+        name,
+        log,
+        noInstall,
+        ...(dialect ? { dialect } : {}),
+      });
     },
   },
   dev: {

@@ -1,15 +1,27 @@
 import { HttpStatus, ValidationError } from '@hopak/common';
 import type { z } from 'zod';
-import type { Database, ModelClient } from '../db/client';
+import type { ModelClient } from '../db/client';
 import type { RequestContext } from '../http/types';
 import type { ModelDefinition } from '../model/define';
 import { serializeForResponse, serializeListForResponse } from '../serialize';
 import { buildModelSchema, validate } from '../validation';
 
-export interface CrudDependencies {
-  db: Database;
-  model: ModelDefinition;
-}
+/**
+ * Handler factories for the six REST verbs over a `ModelDefinition`.
+ * Each factory returns a pure `RequestContext → Response` function; the
+ * database handle is read off `ctx.db` at call time, not captured at
+ * module load. Combined with the `crud` namespace, this lets a user's
+ * generated route file register CRUD explicitly:
+ *
+ *   // app/routes/api/posts.ts
+ *   import { crud } from '@hopak/core';
+ *   import post from '../../models/post';
+ *   export const GET = crud.list(post);
+ *   export const POST = crud.create(post);
+ *
+ * The runtime never walks the model registry to "wire up" anything — the
+ * route files are the single source of truth.
+ */
 
 interface ListQuery {
   limit: number;
@@ -39,8 +51,13 @@ function parseId(raw: string | undefined): number | string {
   return Number.isFinite(asNumber) ? asNumber : raw;
 }
 
-function getClient(deps: CrudDependencies): ModelClient {
-  return deps.db.model(deps.model.name);
+function clientFor(ctx: RequestContext, model: ModelDefinition): ModelClient {
+  if (!ctx.db) {
+    throw new Error(
+      `CRUD handler for '${model.name}' needs a configured database. Set \`database\` in hopak.config.ts or pass a \`db\` to the test server.`,
+    );
+  }
+  return ctx.db.model(model.name);
 }
 
 function validateBody(schema: z.ZodType, body: unknown): Record<string, unknown> {
@@ -49,13 +66,13 @@ function validateBody(schema: z.ZodType, body: unknown): Record<string, unknown>
   return result.data;
 }
 
-export function createListHandler(deps: CrudDependencies) {
+export function createListHandler(model: ModelDefinition) {
   return async (ctx: RequestContext) => {
     const { limit, offset } = parseListQuery(ctx.query);
-    const client = getClient(deps);
+    const client = clientFor(ctx, model);
     const [rows, total] = await Promise.all([client.findMany({ limit, offset }), client.count()]);
     return {
-      items: serializeListForResponse(rows, deps.model),
+      items: serializeListForResponse(rows, model),
       total,
       limit,
       offset,
@@ -63,35 +80,35 @@ export function createListHandler(deps: CrudDependencies) {
   };
 }
 
-export function createFindOneHandler(deps: CrudDependencies) {
+export function createFindOneHandler(model: ModelDefinition) {
   return async (ctx: RequestContext) => {
-    const row = await getClient(deps).findOrFail(parseId(ctx.params.id));
-    return serializeForResponse(row, deps.model);
+    const row = await clientFor(ctx, model).findOrFail(parseId(ctx.params.id));
+    return serializeForResponse(row, model);
   };
 }
 
-export function createCreateHandler(deps: CrudDependencies) {
-  const schema = buildModelSchema(deps.model, { omitId: true });
+export function createCreateHandler(model: ModelDefinition) {
+  const schema = buildModelSchema(model, { omitId: true });
   return async (ctx: RequestContext) => {
     const data = validateBody(schema, await ctx.body());
-    const row = await getClient(deps).create(data);
+    const row = await clientFor(ctx, model).create(data);
     ctx.setStatus(HttpStatus.Created);
-    return serializeForResponse(row, deps.model);
+    return serializeForResponse(row, model);
   };
 }
 
-export function createUpdateHandler(deps: CrudDependencies, partial: boolean) {
-  const schema = buildModelSchema(deps.model, { omitId: true, partial });
+export function createUpdateHandler(model: ModelDefinition, partial: boolean) {
+  const schema = buildModelSchema(model, { omitId: true, partial });
   return async (ctx: RequestContext) => {
     const data = validateBody(schema, await ctx.body());
-    const row = await getClient(deps).update(parseId(ctx.params.id), data);
-    return serializeForResponse(row, deps.model);
+    const row = await clientFor(ctx, model).update(parseId(ctx.params.id), data);
+    return serializeForResponse(row, model);
   };
 }
 
-export function createDeleteHandler(deps: CrudDependencies) {
+export function createDeleteHandler(model: ModelDefinition) {
   return async (ctx: RequestContext) => {
-    const removed = await getClient(deps).delete(parseId(ctx.params.id));
+    const removed = await clientFor(ctx, model).delete(parseId(ctx.params.id));
     ctx.setStatus(removed ? HttpStatus.NoContent : HttpStatus.NotFound);
     return null;
   };

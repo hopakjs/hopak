@@ -1,44 +1,35 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { type TestServer, createTestServer } from '@hopak/testing';
-import {
-  Router,
-  boolean,
-  defineRoute,
-  email,
-  model,
-  password,
-  registerCrudRoutes,
-  text,
-} from '../src';
+import { Router, boolean, crud, defineRoute, email, model, password, text } from '../src';
 
-const post = model(
-  'post',
-  {
-    title: text().required().min(3).max(200),
-    content: text().required(),
-    published: boolean().default(false),
-  },
-  { crud: true },
-);
+const post = model('post', {
+  title: text().required().min(3).max(200),
+  content: text().required(),
+  published: boolean().default(false),
+});
 
-const user = model(
-  'user',
-  {
-    name: text().required(),
-    email: email().required().unique(),
-    password: password().required().min(6),
-  },
-  { crud: true },
-);
-
-const internal = model('internal', { secret: text() });
+const user = model('user', {
+  name: text().required(),
+  email: email().required().unique(),
+  password: password().required().min(6),
+});
 
 let env: TestServer | undefined;
 
-async function bootstrap(
-  models: (typeof post)[] | (typeof user)[] | (typeof internal)[] = [post],
+async function bootstrap<M extends Parameters<typeof crud.list>[0]>(
+  models: readonly M[],
 ): Promise<TestServer> {
-  env = await createTestServer({ models, withCrud: true });
+  const router = new Router();
+  for (const m of models) {
+    const plural = m.name.endsWith('s') ? m.name : `${m.name}s`;
+    router.add('GET', `/api/${plural}`, crud.list(m));
+    router.add('POST', `/api/${plural}`, crud.create(m));
+    router.add('GET', `/api/${plural}/[id]`, crud.read(m));
+    router.add('PUT', `/api/${plural}/[id]`, crud.update(m));
+    router.add('PATCH', `/api/${plural}/[id]`, crud.patch(m));
+    router.add('DELETE', `/api/${plural}/[id]`, crud.remove(m));
+  }
+  env = await createTestServer({ models, router });
   return env;
 }
 
@@ -49,49 +40,22 @@ afterEach(async () => {
   }
 });
 
-describe('registerCrudRoutes', () => {
-  test('only registers for models with crud:true', async () => {
-    const router = new Router();
-    const local = await createTestServer({ models: [post, user, internal], router });
-    const result = registerCrudRoutes({
-      router,
-      db: local.requireDb(),
-      models: [post, user, internal],
-    });
-    expect(result.registered).toBe(12);
-    expect(router.has('GET', '/api/internals')).toBe(false);
-    await local.stop();
+describe('crud.* helpers (route-file level)', () => {
+  test('crud.list returns a RouteDefinition with a handler', () => {
+    const route = crud.list(post);
+    expect(route).toBeDefined();
+    expect(typeof route.handler).toBe('function');
   });
 
-  test('uses pluralized name in path', async () => {
-    const router = new Router();
-    const local = await createTestServer({ models: [post], router });
-    registerCrudRoutes({ router, db: local.requireDb(), models: [post] });
-    expect(router.has('GET', '/api/posts')).toBe(true);
-    expect(router.has('GET', '/api/posts/[id]')).toBe(true);
-    await local.stop();
-  });
-
-  test('respects custom prefix', async () => {
-    const router = new Router();
-    const local = await createTestServer({ models: [post], router });
-    registerCrudRoutes({ router, db: local.requireDb(), models: [post], prefix: '/v2' });
-    expect(router.has('GET', '/v2/posts')).toBe(true);
-    await local.stop();
-  });
-
-  test('skips when file route already registered', async () => {
-    const router = new Router();
-    router.add('POST', '/api/posts', defineRoute({ handler: () => ({ from: 'file' }) }));
-    const local = await createTestServer({ models: [post], router });
-    const result = registerCrudRoutes({ router, db: local.requireDb(), models: [post] });
-    expect(result.skipped).toHaveLength(1);
-    expect(result.skipped[0]?.method).toBe('POST');
-    await local.stop();
+  test('crud.create + crud.read + crud.patch + crud.remove cover the CRUD verbs', () => {
+    expect(typeof crud.create(post).handler).toBe('function');
+    expect(typeof crud.read(post).handler).toBe('function');
+    expect(typeof crud.patch(post).handler).toBe('function');
+    expect(typeof crud.remove(post).handler).toBe('function');
   });
 });
 
-describe('CRUD endpoints (live)', () => {
+describe('CRUD endpoints (live, user wires up crud.* in a router)', () => {
   test('POST creates and validates body', async () => {
     const { client } = await bootstrap([post]);
 
@@ -188,20 +152,24 @@ describe('CRUD endpoints (live)', () => {
     expect(res.body.name).toBe('wince');
   });
 
-  test('file route overrides auto-CRUD POST', async () => {
+  test('custom file-route just replaces the verb — no implicit conflict', async () => {
+    // When the user wants to override POST, they simply don't use
+    // crud.create() in the route file; they write their own. The
+    // router doesn't know anything about "auto" vs "custom".
     const router = new Router();
+    router.add('GET', '/api/posts', crud.list(post));
     router.add(
       'POST',
       '/api/posts',
       defineRoute({ handler: () => ({ from: 'file', custom: true }) }),
     );
-    env = await createTestServer({ models: [post], router, withCrud: true });
+    env = await createTestServer({ models: [post], router });
     const res = await env.client.post<{ from: string }>('/api/posts', {});
     expect(res.status).toBe(200);
     expect(res.body.from).toBe('file');
   });
 
-  test('email unique constraint surfaces as 5xx (DB error)', async () => {
+  test('email unique violation surfaces as 409 Conflict', async () => {
     const { client } = await bootstrap([user]);
 
     await client.post('/api/users', { name: 'a', email: 'same@x.com', password: 'pass123' });
@@ -210,6 +178,6 @@ describe('CRUD endpoints (live)', () => {
       email: 'same@x.com',
       password: 'pass123',
     });
-    expect(dup.status).toBeGreaterThanOrEqual(400);
+    expect(dup.status).toBe(409);
   });
 });

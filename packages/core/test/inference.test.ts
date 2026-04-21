@@ -113,14 +113,11 @@ describe('model() inference', () => {
   test('default options are applied', () => {
     const m = model('test', { name: text() });
     expect(m.options.timestamps).toBe(true);
-    expect(m.options.crud).toBe(false);
   });
 
   test('user-provided options override defaults', () => {
-    const m = model('test', { name: text() }, { crud: true, owner: 'name' });
-    expect(m.options.crud).toBe(true);
-    expect(m.options.owner).toBe('name');
-    expect(m.options.timestamps).toBe(true);
+    const m = model('test', { name: text() }, { timestamps: false });
+    expect(m.options.timestamps).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { type Logger, pathExists } from '@hopak/common';
+import { type DbDialect, type Logger, pathExists } from '@hopak/common';
 import { projectTemplate } from '../templates';
 
 export interface NewCommandOptions {
@@ -9,6 +9,8 @@ export interface NewCommandOptions {
   log: Logger;
   /** Skip `bun install` after scaffolding. Useful for tests and air-gapped setups. */
   noInstall?: boolean;
+  /** DB dialect to scaffold with. Defaults to sqlite (zero-install). */
+  dialect?: DbDialect;
 }
 
 export async function runNew(options: NewCommandOptions): Promise<number> {
@@ -19,7 +21,7 @@ export async function runNew(options: NewCommandOptions): Promise<number> {
     return 1;
   }
 
-  const template = projectTemplate(options.name);
+  const template = projectTemplate(options.name, { dialect: options.dialect ?? 'sqlite' });
   await mkdir(target, { recursive: true });
 
   for (const [relativePath, contents] of Object.entries(template.files)) {

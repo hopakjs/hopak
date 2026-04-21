@@ -4,7 +4,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#recipes">Recipes</a> ·
   <a href="#models">Models</a> ·
-  <a href="#auto-crud">Auto-CRUD</a> ·
+  <a href="#crud">CRUD</a> ·
   <a href="#routes">Routes</a> ·
   <a href="#request-context">Context</a> ·
   <a href="#validation">Validation</a> ·
@@ -21,20 +21,33 @@
 
 ```bash
 bun add -g @hopak/cli
-hopak new my-app           # scaffolds + runs bun install inline
+hopak new my-app           # SQLite by default (zero-install)
 cd my-app
 hopak dev
 ```
 
-Server on `http://localhost:3000`. Drop a model in `app/models/` and you get auto-CRUD, validation, JSON serialization, static files — zero config.
+Want Postgres or MySQL from the start? Pick the dialect at creation
+time — the driver gets installed, `hopak.config.ts` is pre-set, and
+`.env.example` already has `DATABASE_URL`:
 
-SQLite is the default; switch to Postgres or MySQL with one command:
+```bash
+hopak new my-app --db postgres
+hopak new my-app --db mysql
+hopak new my-app --db sqlite   # explicit opt-in (default)
+```
+
+Already inside a project? Switch dialects:
 
 ```bash
 hopak use postgres         # installs `postgres` driver, patches config, updates .env.example
 hopak use mysql            # installs `mysql2`, etc.
 hopak use sqlite           # back to default
 ```
+
+Server on `http://localhost:3000`. Scaffold a model + its REST files
+with two commands (`hopak generate model/crud`) and you get
+validation, JSON serialization, static files — zero runtime magic,
+every route is in source.
 
 ---
 
@@ -44,26 +57,35 @@ Common backend tasks, step by step. Every recipe shows **where the file goes**, 
 
 ### 1. Create a REST resource
 
-**Goal:** expose `GET/POST /api/posts` and `GET/PUT/PATCH/DELETE /api/posts/:id` from a single file.
+**Goal:** expose `GET/POST /api/posts` and `GET/PUT/PATCH/DELETE /api/posts/:id`.
 
-**1.** Create the model file:
+**1.** Generate the model + CRUD route files:
+
+```bash
+hopak generate model post
+hopak generate crud post
+```
+
+The first command writes `app/models/post.ts`. The second writes two
+route files — `app/routes/api/posts.ts` (list + create) and
+`app/routes/api/posts/[id].ts` (read + replace + patch + delete). Open
+either file; the entire REST surface is there as plain code you can
+read and edit — nothing is synthesized at runtime.
+
+**2.** Add your fields to the model:
 
 ```ts
 // app/models/post.ts
 import { model, text, boolean } from '@hopak/core';
 
-export default model(
-  'post',
-  {
-    title: text().required().min(3),
-    content: text().required(),
-    published: boolean().default(false),
-  },
-  { crud: true },  // ← enables auto-CRUD; without this the model has no endpoints
-);
+export default model('post', {
+  title: text().required().min(3),
+  content: text().required(),
+  published: boolean().default(false),
+});
 ```
 
-**2.** Start the server:
+**3.** Start the server:
 
 ```bash
 hopak dev
@@ -71,7 +93,7 @@ hopak dev
 
 On first boot Hopak creates the SQLite file at `.hopak/data.db` and runs `CREATE TABLE IF NOT EXISTS` for every model. Safe to repeat — `hopak sync` does the same thing explicitly if you prefer to separate schema sync from server start (handy for CI or a fresh Postgres / MySQL database).
 
-**3.** Try it from another terminal:
+**4.** Try it from another terminal:
 
 ```bash
 curl -X POST http://localhost:3000/api/posts \
@@ -86,7 +108,7 @@ Expected response (`201 Created`):
   "createdAt": "...", "updatedAt": "..." }
 ```
 
-**4.** List them:
+**5.** List them:
 
 ```bash
 curl http://localhost:3000/api/posts
@@ -96,15 +118,15 @@ curl 'http://localhost:3000/api/posts?limit=5&offset=10'
 # pagination via query string; limit defaults to 20, max 100
 ```
 
-**5.** Verify what's actually registered:
+**6.** Verify what's actually registered:
 
 ```bash
 hopak check
-# ✓ Models     1 loaded (post)
-# ✓ Auto-CRUD  1 model(s) with crud:true → 6 endpoint(s)
+# ✓ Models   1 loaded (post)
+# ✓ Routes   6 file route(s)
 ```
 
-Six endpoints from one file: list, read, create, replace, patch, delete — all paginated and validated. Remove `{ crud: true }` to keep the table but suppress the endpoints (useful for internal-only models). The plural segment (`/api/posts`) comes from `pluralize('post')` — irregular plurals are handled (`story → stories`, `box → boxes`).
+Six endpoints from two generated files: list, read, create, replace, patch, delete — all paginated and validated. The plural segment (`/api/posts`) comes from `pluralize('post')` — irregular plurals are handled (`story → stories`, `box → boxes`). Don't want endpoints for a given model? Just don't run `hopak generate crud` for it — the model still becomes a table, you just don't expose HTTP routes.
 
 ### 2. Validate input
 
@@ -126,7 +148,7 @@ export default model(
     age: number().optional().min(18).max(120),
     role: enumOf('admin', 'user', 'guest').default('user'),
   },
-  { crud: true },
+
 );
 ```
 
@@ -172,7 +194,7 @@ So there are two response shapes to expect from a create call:
 
 #### Validate in a custom route
 
-When writing your own handler, validate with the same schema the auto-CRUD uses:
+When writing your own handler, validate with the same schema the CRUD uses:
 
 ```ts
 // app/routes/api/signup.ts
@@ -193,7 +215,7 @@ export const POST = defineRoute({
 });
 ```
 
-`buildModelSchema(model, { partial: true })` gives the `PATCH`-flavoured schema. `result.errors` is `Record<field, string[]>` — the same shape auto-CRUD sends back.
+`buildModelSchema(model, { partial: true })` gives the `PATCH`-flavoured schema. `result.errors` is `Record<field, string[]>` — the same shape CRUD sends back.
 
 #### Throw your own field errors
 
@@ -233,7 +255,7 @@ export default model(
     password: password().required().min(8),
     apiKey: token().optional(),
   },
-  { crud: true },
+
 );
 ```
 
@@ -342,15 +364,19 @@ ctx.ip                     // client IP or undefined
 
 Return anything — plain object, string, `Response`, `null` — the framework serializes it. See [Request context](#request-context) for the full surface.
 
-### 5. Override one auto-CRUD endpoint
+### 5. Customize one CRUD endpoint
 
-**Goal:** replace just the `POST /api/posts` handler with custom logic, keep the other five auto-CRUD endpoints as they are.
+**Goal:** replace just the `POST /api/posts` handler with custom logic, keep the other five endpoints as they are.
 
-Create a file at the matching path. **File routes always win**, matched by exact method + URL pattern.
+The CRUD files are plain source. Open `app/routes/api/posts.ts` and
+replace the `POST` export with your own `defineRoute(...)`:
 
 ```ts
 // app/routes/api/posts.ts
-import { defineRoute, ValidationError } from '@hopak/core';
+import { crud, defineRoute, ValidationError } from '@hopak/core';
+import post from '../../models/post';
+
+export const GET = crud.list(post);
 
 export const POST = defineRoute({
   handler: async (ctx) => {
@@ -358,39 +384,38 @@ export const POST = defineRoute({
     if (!body.title?.startsWith('[DRAFT]')) {
       throw new ValidationError('Title must start with [DRAFT]');
     }
-    const created = await ctx.db?.model('post').create({
+    return ctx.db!.model('post').create({
       title: body.title,
       content: 'auto-generated draft',
     });
-    return created;
   },
 });
 ```
 
-Now `POST /api/posts` runs your code, but `GET /api/posts`, `GET /api/posts/:id`, `PUT/PATCH/DELETE /api/posts/:id` still come from auto-CRUD.
+`GET /api/posts` still comes from `crud.list`; the item-level file
+(`posts/[id].ts`) is untouched.
 
-#### Disable a single endpoint
+#### Disable a single verb
 
-Create the override and throw from it — clients see the exact status you pick:
+Delete that verb's export. The router will answer `405 Method Not
+Allowed` with an `Allow:` header listing the verbs that remain.
 
 ```ts
-// app/routes/api/posts/[id].ts — block DELETE only
-import { defineRoute, Forbidden } from '@hopak/core';
+// app/routes/api/posts/[id].ts — DELETE removed
+import { crud } from '@hopak/core';
+import post from '../../../models/post';
 
-export const DELETE = defineRoute({
-  handler: () => { throw new Forbidden('Posts cannot be deleted'); },
-});
+export const GET = crud.read(post);
+export const PUT = crud.update(post);
+export const PATCH = crud.patch(post);
+// no DELETE — clients see 405 with Allow: GET, PUT, PATCH
 ```
 
-`GET`, `PUT`, `PATCH` for `/api/posts/:id` still work — only `DELETE` is locked down.
+#### Skip CRUD entirely for this model
 
-#### Turn off auto-CRUD entirely
-
-Drop `{ crud: true }` from the model. The table and validation stay, but no endpoints are generated — you write every route by hand, with full control over the URL structure (no forced `/api/<plural>` prefix).
-
-#### Gotcha: file path must match the auto-CRUD URL
-
-Auto-CRUD mounts at `/api/<plural>/[:id]`. The override file has to live at the same path — `app/routes/api/posts.ts` for `POST /api/posts`, or `app/routes/api/posts/[id].ts` for `PUT /api/posts/:id`. A file at `app/routes/posts.ts` won't override anything (it creates a new `/posts` resource next to the auto-CRUD one).
+Don't run `hopak generate crud` for it, or delete the two generated
+files. The model still becomes a table and can be queried via
+`ctx.db!.model('post')` from any custom route you write.
 
 ### 6. Throw a typed error
 
@@ -517,7 +542,7 @@ throw new QuotaExceeded('Monthly quota exceeded', {
 
 ### 8. Query the database inside a handler
 
-**Goal:** read/write rows from a custom route using the same typed client auto-CRUD uses.
+**Goal:** read/write rows from a custom route using the same typed client CRUD uses.
 
 `ctx.db.model('<name>')` returns a client with full CRUD, filters, ordering, and pagination.
 
@@ -567,7 +592,7 @@ client.findMany({ limit: 20 })       // LIMIT 20
 client.findMany({ limit: 20, offset: 40 })
 ```
 
-The typed client passes `limit` through as-is. **Auto-CRUD endpoints**
+The typed client passes `limit` through as-is. **CRUD endpoints**
 (reached via HTTP) enforce a cap of `100` on the `?limit=` query param
 so public traffic can't ask for millions of rows; direct client calls
 inside your handlers have no such cap.
@@ -625,7 +650,7 @@ export default model(
     email: email().required().unique(),
     posts: hasMany('post'),   // virtual — no column
   },
-  { crud: true },
+
 );
 ```
 
@@ -639,7 +664,7 @@ export default model(
     title: text().required(),
     author: belongsTo('user'),   // creates `author_id` foreign key
   },
-  { crud: true },
+
 );
 ```
 
@@ -756,19 +781,19 @@ model('user', {
   email: email().required().unique(),
   posts: hasMany('post'),
   profile: hasOne('profile'),
-}, { crud: true });
+});
 
 // app/models/post.ts
 model('post', {
   title: text().required(),
   author: belongsTo('user'),
-}, { crud: true });
+});
 
 // app/models/profile.ts
 model('profile', {
   bio: text().required(),
   owner: belongsTo('user'),
-}, { crud: true });
+});
 ```
 
 #### `belongsTo` — fetch the parent
@@ -1164,7 +1189,7 @@ hopak sync
 hopak dev
 ```
 
-The rest of the project code is **unchanged** — models, auto-CRUD, routes,
+The rest of the project code is **unchanged** — models, CRUD, routes,
 `ctx.db.model(...)` — all work identically on every dialect.
 
 #### Dialect differences (summary)
@@ -1406,7 +1431,7 @@ No error at boot — Hopak only hits the filesystem on actual GET requests.
 For every incoming request, Hopak checks in this order:
 
 1. **File-based routes** in `app/routes/` (any HTTP method)
-2. **Auto-CRUD routes** generated by `model(..., { crud: true })`
+2. **CRUD routes** generated by `model(...)`
 3. **Static file** in `public/` (only `GET` and `HEAD`)
 4. **404 Not Found** with a JSON body
 
@@ -1553,7 +1578,7 @@ export default model(
   {
     name: text().required(),
   },
-  { crud: true },
+
 );
 ```
 
@@ -1632,7 +1657,7 @@ export default model(
     published: boolean().default(false),
     author: belongsTo('user'),
   },
-  { crud: true },
+
 );
 ```
 
@@ -1671,25 +1696,57 @@ timestamp().onUpdate('now')
 
 ```ts
 model('post', { /* fields */ }, {
-  crud: true,         // generate REST endpoints (default: false)
   timestamps: true,   // add createdAt + updatedAt columns (default: true)
 });
 ```
 
 ---
 
-## Auto-CRUD
+## CRUD
 
-A model with `crud: true` exposes six endpoints under `/api/<plural>/`:
+CRUD is not runtime magic — it's **scaffolded files** you can read and
+edit. The CLI writes two tiny route files per model; the framework
+then serves them like any other file route. Nothing is synthesized
+from a flag.
 
-| Method | Path | Behavior |
-|--------|------|----------|
-| `GET` | `/api/posts` | Paginated list |
-| `GET` | `/api/posts/:id` | Single row, 404 if missing |
-| `POST` | `/api/posts` | Validate body, create, return 201 |
-| `PUT` | `/api/posts/:id` | Full body validation |
-| `PATCH` | `/api/posts/:id` | Partial body validation |
-| `DELETE` | `/api/posts/:id` | 204 on success, 404 if missing |
+```bash
+hopak generate crud post
+# → Created file  app/routes/api/posts.ts
+# → Created file  app/routes/api/posts/[id].ts
+```
+
+The generated files use the `crud` helpers from `@hopak/core`:
+
+```ts
+// app/routes/api/posts.ts
+import { crud } from '@hopak/core';
+import post from '../../models/post';
+
+export const GET = crud.list(post);
+export const POST = crud.create(post);
+```
+
+```ts
+// app/routes/api/posts/[id].ts
+import { crud } from '@hopak/core';
+import post from '../../../models/post';
+
+export const GET = crud.read(post);
+export const PUT = crud.update(post);
+export const PATCH = crud.patch(post);
+export const DELETE = crud.remove(post);
+```
+
+That's the whole REST surface. Six endpoints under `/api/<plural>/`:
+
+| Method | Path | Helper | Behavior |
+|--------|------|--------|----------|
+| `GET` | `/api/posts` | `crud.list(post)` | Paginated list |
+| `GET` | `/api/posts/:id` | `crud.read(post)` | Single row, 404 if missing |
+| `POST` | `/api/posts` | `crud.create(post)` | Validate body, create, return 201 |
+| `PUT` | `/api/posts/:id` | `crud.update(post)` | Full body validation |
+| `PATCH` | `/api/posts/:id` | `crud.patch(post)` | Partial body validation |
+| `DELETE` | `/api/posts/:id` | `crud.remove(post)` | 204 on success, 404 if missing |
 
 ```bash
 curl -X POST http://localhost:3000/api/posts \
@@ -1701,24 +1758,42 @@ curl http://localhost:3000/api/posts?limit=10&offset=20
 # → {"items":[...],"total":42,"limit":10,"offset":20}
 ```
 
-`limit` defaults to 20, max 100. Validation errors return 400 with field-level details.
+`limit` defaults to 20, max 100. Validation errors return 400 with
+field-level details; UNIQUE violations return 409; password / secret
+/ token fields are stripped from responses (including those loaded
+through `include`).
 
-### Override an endpoint
+### Customize an endpoint
 
-Drop a file in `app/routes/` with the same path — the file route wins:
+Just edit the generated file. To replace `POST /api/posts` with your
+own logic, delete the `POST` export from `app/routes/api/posts.ts`
+and write a custom handler:
 
 ```ts
-// app/routes/posts.ts — overrides POST /api/posts only
-import { defineRoute } from '@hopak/core';
+// app/routes/api/posts.ts
+import { crud, defineRoute } from '@hopak/core';
+import post from '../../models/post';
+
+export const GET = crud.list(post);
 
 export const POST = defineRoute({
   handler: async (ctx) => {
-    // your custom create logic
+    // your custom create logic — e.g. force-prefix the title,
+    // enforce auth, etc. — then call ctx.db!.model('post').create(...)
   },
 });
 ```
 
-The other five auto-CRUD endpoints stay intact.
+The other five verbs stay as they are. Because everything is in
+source files, there's no "override" magic to learn — you just change
+what the file exports.
+
+### Skip CRUD for a model
+
+Don't run `hopak generate crud` for it. The model still becomes a
+table, you just don't expose HTTP routes. To add them later, run the
+command — or write the file by hand if you want non-`/api/<plural>/`
+URLs.
 
 ---
 
@@ -1799,7 +1874,7 @@ Return values are serialized:
 
 ## Validation
 
-Validation is generated from the model — no separate schema to maintain. Every auto-CRUD `POST`/`PUT`/`PATCH` enforces it.
+Validation is generated from the model — no separate schema to maintain. Every CRUD `POST`/`PUT`/`PATCH` enforces it.
 
 Failures return `400`:
 

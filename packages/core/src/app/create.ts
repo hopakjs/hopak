@@ -1,7 +1,6 @@
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { type HopakConfig, type HopakConfigInput, type Logger, createLogger } from '@hopak/common';
-import { registerCrudRoutes } from '../crud/register';
 import type { Database } from '../db/client';
 import { createDatabase } from '../db/factory';
 import { translateConnectError } from '../db/sql/connect-translator';
@@ -70,22 +69,10 @@ async function connectDatabase(config: HopakConfig, registry: ModelRegistry): Pr
   return db;
 }
 
-async function buildRouter(
-  config: HopakConfig,
-  db: Database,
-  registry: ModelRegistry,
-  log: Logger,
-): Promise<Router> {
+async function buildRouter(config: HopakConfig, log: Logger): Promise<Router> {
   const router = new Router();
   const fileRoutes = await loadFileRoutes({ routesDir: config.paths.routes, router, log });
   log.debug('Loaded file routes', { count: fileRoutes.routes });
-
-  const crud = registerCrudRoutes({ router, db, models: registry.all(), log });
-  log.debug('Registered CRUD routes', {
-    registered: crud.registered,
-    skipped: crud.skipped.length,
-  });
-
   return router;
 }
 
@@ -136,7 +123,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
   const registry = await discoverModels(config, log);
   await ensureWritableDirs(config);
   const db = await connectDatabase(config, registry);
-  const router = await buildRouter(config, db, registry, log);
+  const router = await buildRouter(config, log);
 
   let server: ListeningServer | undefined;
 

@@ -12,7 +12,7 @@ let env: TestServer;
 beforeAll(async () => {
   workDir = await mkdtemp(join(tmpdir(), 'hopak-testing-root-'));
   await mkdir(join(workDir, 'app', 'models'), { recursive: true });
-  await mkdir(join(workDir, 'app', 'routes'), { recursive: true });
+  await mkdir(join(workDir, 'app', 'routes', 'api', 'widgets'), { recursive: true });
 
   await writeFile(
     join(workDir, 'hopak.config.ts'),
@@ -21,7 +21,18 @@ beforeAll(async () => {
 
   await writeFile(
     join(workDir, 'app', 'models', 'widget.ts'),
-    `import { model, text } from '${corePath}';\nexport default model('widget', { name: text().required().min(2) }, { crud: true });\n`,
+    `import { model, text } from '${corePath}';\nexport default model('widget', { name: text().required().min(2) });\n`,
+  );
+
+  // File-route scaffold (equivalent to `hopak generate crud widget` output).
+  // This is what a real Hopak project would contain — nothing is implicit.
+  await writeFile(
+    join(workDir, 'app', 'routes', 'api', 'widgets.ts'),
+    `import { crud } from '${corePath}';\nimport widget from '../../models/widget';\nexport const GET = crud.list(widget);\nexport const POST = crud.create(widget);\n`,
+  );
+  await writeFile(
+    join(workDir, 'app', 'routes', 'api', 'widgets', '[id].ts'),
+    `import { crud } from '${corePath}';\nimport widget from '../../../models/widget';\nexport const GET = crud.read(widget);\nexport const PATCH = crud.patch(widget);\nexport const DELETE = crud.remove(widget);\n`,
   );
 
   await writeFile(
@@ -44,7 +55,7 @@ describe('createTestServer({ rootDir })', () => {
     expect(res.body.ok).toBe(true);
   });
 
-  test('registers auto-CRUD for scanned models', async () => {
+  test('CRUD routes from scaffolded files serve the model', async () => {
     const created = await env.client.post<{ id: number; name: string }>('/api/widgets', {
       name: 'one',
     });

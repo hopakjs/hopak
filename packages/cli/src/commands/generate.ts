@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { type Logger, pathExists } from '@hopak/common';
-import { modelTemplate, routeTemplate } from '../templates';
+import { crudRoutesFor, modelTemplate, routeTemplate } from '../templates';
 
 export interface GenerateOptions {
   kind: string;
@@ -10,27 +10,30 @@ export interface GenerateOptions {
   log: Logger;
 }
 
-interface Generator {
-  /** Resolves the absolute target path for the generated file. */
-  resolveTarget(cwd: string, name: string): string;
-  /** Returns the file contents to write. */
-  render(name: string): string;
+interface EmittedFile {
+  path: string;
+  contents: string;
 }
+
+type Generator = (cwd: string, name: string) => EmittedFile[];
 
 const TS_EXT_RE = /\.ts$/;
 const LEADING_SLASH_RE = /^\/+/;
 
 const GENERATORS: Record<string, Generator> = {
-  model: {
-    resolveTarget: (cwd, name) => resolve(cwd, 'app/models', `${name}.ts`),
-    render: (name) => modelTemplate(name),
+  model: (cwd, name) => [
+    { path: resolve(cwd, 'app/models', `${name}.ts`), contents: modelTemplate(name) },
+  ],
+  route: (cwd, name) => {
+    const normalized = name.replace(LEADING_SLASH_RE, '').replace(TS_EXT_RE, '');
+    return [{ path: resolve(cwd, 'app/routes', `${normalized}.ts`), contents: routeTemplate() }];
   },
-  route: {
-    resolveTarget: (cwd, name) => {
-      const normalized = name.replace(LEADING_SLASH_RE, '').replace(TS_EXT_RE, '');
-      return resolve(cwd, 'app/routes', `${normalized}.ts`);
-    },
-    render: () => routeTemplate(),
+  crud: (cwd, name) => {
+    const { collection, item } = crudRoutesFor(name);
+    return [
+      { path: resolve(cwd, collection.path), contents: collection.contents },
+      { path: resolve(cwd, item.path), contents: item.contents },
+    ];
   },
 };
 
@@ -43,15 +46,19 @@ export async function runGenerate(options: GenerateOptions): Promise<number> {
     return 1;
   }
 
-  const target = generator.resolveTarget(options.cwd ?? process.cwd(), options.name);
+  const files = generator(options.cwd ?? process.cwd(), options.name);
 
-  if (await pathExists(target)) {
-    options.log.error(`File already exists: ${target}`);
-    return 1;
+  for (const file of files) {
+    if (await pathExists(file.path)) {
+      options.log.error(`File already exists: ${file.path}`);
+      return 1;
+    }
   }
 
-  await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, generator.render(options.name), 'utf8');
-  options.log.info('Created file', { path: target });
+  for (const file of files) {
+    await mkdir(dirname(file.path), { recursive: true });
+    await writeFile(file.path, file.contents, 'utf8');
+    options.log.info('Created file', { path: file.path });
+  }
   return 0;
 }

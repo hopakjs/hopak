@@ -28,8 +28,6 @@ const ANSI = {
   reset: '\x1b[0m',
 } as const;
 
-const CRUD_ENDPOINTS_PER_MODEL = 6;
-
 function symbol(ok: boolean): string {
   return ok ? `${ANSI.green}✓${ANSI.reset}` : `${ANSI.red}✗${ANSI.reset}`;
 }
@@ -129,14 +127,6 @@ async function collectChecks(cwd: string): Promise<CheckOutcome> {
   } else {
     lines.push({ ok: true, label: 'Routes', detail: `${routes.routes} file route(s)` });
   }
-
-  const crudModels = registry.all().filter((m) => m.options.crud);
-  const crudEndpoints = crudModels.length * CRUD_ENDPOINTS_PER_MODEL;
-  lines.push({
-    ok: true,
-    label: 'Auto-CRUD',
-    detail: `${crudModels.length} model(s) with crud:true → ${crudEndpoints} endpoint(s)`,
-  });
 
   const publicExists = await pathExists(config.paths.public);
   lines.push({
