@@ -201,6 +201,11 @@ githubCallback({
 
 Google is identical — import from `@hopak/auth/oauth/google`.
 
+If the required env vars (`GITHUB_OAUTH_ID` / `GITHUB_OAUTH_SECRET`,
+`GOOGLE_OAUTH_ID` / `GOOGLE_OAUTH_SECRET`) aren't set, the start /
+callback handlers throw `ConfigError` (500 with a generic client
+message) — the specific env-var name stays server-side in the logs.
+
 ## Extending `AuthUser`
 
 Carry more claims by augmenting the `AuthUser` interface:

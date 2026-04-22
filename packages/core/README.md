@@ -663,10 +663,11 @@ export const GET = defineRoute({
 
 #### `ctx.db` is `undefined` when there are no models
 
-If the project has zero models, Hopak doesn't open a database — `ctx.db` stays `undefined`. Handlers that require it can narrow with `ctx.requireDb?.()`, or check explicitly:
+If the project has zero models, Hopak doesn't open a database — `ctx.db` stays `undefined`. Handlers that require it check explicitly:
 
 ```ts
 if (!ctx.db) throw new InternalError('Database not configured');
+const posts = await ctx.db.model('post').findMany();
 ```
 
 A normal app with at least one model in `app/models/` always has `ctx.db` set.
@@ -1610,6 +1611,7 @@ export default defineConfig({
   paths: {
     models: 'src/domain',
     routes: 'src/api',
+    migrations: 'src/migrations',
     public: 'static',
   },
 });
@@ -1619,6 +1621,7 @@ After this:
 
 - `hopak generate model post` writes to `src/domain/post.ts`
 - `hopak generate route posts/[id]` writes to `src/api/posts/[id].ts`
+- `hopak migrate new add_slug` writes to `src/migrations/<timestamp>_add_slug.ts`
 - `hopak dev`, `hopak sync`, `hopak check` scan the new directories
 - Static files are served from `static/` instead of `public/`
 
@@ -1628,6 +1631,7 @@ After this:
 paths: {
   models: 'src/domain',        // where hopak scans models
   routes: 'src/api',           // where hopak scans routes
+  migrations: 'src/migrations',// where hopak migrate writes files
   public: 'static',            // static-file root
   hopakDir: '.cache/hopak',    // runtime data (SQLite file, certs). Default: .hopak
 }
@@ -2404,8 +2408,8 @@ defineRoute({
 ```
 
 `ctx.db` is `undefined` when the server starts without models. In a normal
-app it's always set — `ctx.db!.model(...)` narrows safely, or use
-`ctx.requireDb?.()` for an explicit assertion.
+app it's always set — `ctx.db!.model(...)` narrows safely, or
+`if (!ctx.db) throw new InternalError(...)` for an explicit check.
 
 ### Full `ModelClient` surface
 
@@ -2700,7 +2704,7 @@ to paste manually and exits non-zero — predictable in CI.
 
 - **Runtime:** Bun
 - **Validation:** Zod
-- **ORM:** Drizzle (SQLite / Postgres / MySQL — all three shipping)
+- **ORM:** Drizzle (SQLite / Postgres / MySQL)
 - **Lint/Format:** Biome
 
 ---

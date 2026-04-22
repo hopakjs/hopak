@@ -308,7 +308,7 @@ expect(res.body.error).toBe('NOT_FOUND');
 
 ## Related packages
 
-- [`@hopak/core`](https://www.npmjs.com/package/@hopak/core) — framework (peer at test time)
+- [`@hopak/core`](https://www.npmjs.com/package/@hopak/core) — the framework
 - [`@hopak/cli`](https://www.npmjs.com/package/@hopak/cli) — command-line
 - [`@hopak/common`](https://www.npmjs.com/package/@hopak/common) — shared primitives
 
