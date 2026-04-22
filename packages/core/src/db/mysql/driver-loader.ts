@@ -48,9 +48,7 @@ export function loadMysqlDriver(): MysqlDriver {
   if (cachedDriver) return cachedDriver;
   const loaded = tryRequire<MysqlDriver>('mysql2/promise');
   if (!loaded) {
-    throw new ConfigError(
-      'MySQL driver not installed. Run: hopak use mysql (or: bun add mysql2)',
-    );
+    throw new ConfigError('MySQL driver not installed. Run: hopak use mysql (or: bun add mysql2)');
   }
   cachedDriver = loaded;
   return loaded;
