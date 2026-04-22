@@ -4,21 +4,28 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
  * `migrate up`, assert tables + tracker. Everything through the real
  * CLI dispatcher to catch wiring bugs.
  */
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run } from '../src';
 
 let cwd: string;
 
-// The project lives inside the workspace's examples/ dir so `@hopak/core`
-// resolves through the workspace symlinks without a full install. We use a
-// unique subdir per test to keep them isolated + cleanup-safe.
+// Resolve once so beforeEach can point each tmpdir's node_modules/@hopak/*
+// at the real packages — CI runs from a fresh checkout where examples/* isn't
+// part of the workspace resolution yet, so we can't rely on it.
 const WORKSPACE_ROOT = resolve(dirname(new URL(import.meta.url).pathname), '../../..');
-const EXAMPLES_DIR = join(WORKSPACE_ROOT, 'examples');
+const CORE_PKG = join(WORKSPACE_ROOT, 'packages/core');
+const COMMON_PKG = join(WORKSPACE_ROOT, 'packages/common');
 
 beforeEach(async () => {
-  cwd = join(EXAMPLES_DIR, `migrate-cli-${Math.random().toString(36).slice(2, 10)}`);
-  await mkdir(cwd, { recursive: true });
+  cwd = await mkdtemp(join(tmpdir(), 'hopak-migrate-cli-'));
+  // Hand-rolled node_modules so the scaffolded hopak.config.ts can resolve
+  // @hopak/core without a `bun install` step in each test.
+  await mkdir(join(cwd, 'node_modules/@hopak'), { recursive: true });
+  await symlink(CORE_PKG, join(cwd, 'node_modules/@hopak/core'));
+  await symlink(COMMON_PKG, join(cwd, 'node_modules/@hopak/common'));
+
   await writeFile(
     join(cwd, 'hopak.config.ts'),
     `import { defineConfig } from '@hopak/core';
