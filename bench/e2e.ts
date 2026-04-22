@@ -1,4 +1,4 @@
-import { model, text, crud, defineRoute, Router } from '@hopak/core';
+import { Router, crud, defineRoute, model, text } from '@hopak/core';
 import { createTestServer } from '@hopak/testing';
 
 const post = model('post', {
@@ -22,10 +22,17 @@ for (let i = 1; i <= 100; i++) {
 }
 const base = env.url;
 
-async function loop(label: string, method: string, path: string, iters: number, body?: unknown): Promise<void> {
-  const init: RequestInit = body !== undefined
-    ? { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
-    : { method };
+async function loop(
+  label: string,
+  method: string,
+  path: string,
+  iters: number,
+  body?: unknown,
+): Promise<void> {
+  const init: RequestInit =
+    body !== undefined
+      ? { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+      : { method };
   for (let i = 0; i < 200; i++) await fetch(`${base}${path}`, init);
   const start = Bun.nanoseconds();
   for (let i = 0; i < iters; i++) {
@@ -36,7 +43,9 @@ async function loop(label: string, method: string, path: string, iters: number, 
   const ms = ns / 1e6;
   const usPer = (ns / iters / 1000).toFixed(1);
   const rps = (iters / (ms / 1000)).toFixed(0);
-  console.log(`  ${label.padEnd(30)} ${String(iters).padStart(5)} reqs  ${ms.toFixed(0).padStart(5)}ms  ${usPer.padStart(7)}µs/req  ${rps.padStart(7)} req/s`);
+  console.log(
+    `  ${label.padEnd(30)} ${String(iters).padStart(5)} reqs  ${ms.toFixed(0).padStart(5)}ms  ${usPer.padStart(7)}µs/req  ${rps.padStart(7)} req/s`,
+  );
 }
 
 console.log('=== E2E (serial fetch loop) ===');

@@ -1,5 +1,5 @@
-import { model, text, password, number, boolean } from '@hopak/core';
-import { serializeListForResponse, serializeForResponse } from '@hopak/core';
+import { boolean, model, number, password, text } from '@hopak/core';
+import { serializeForResponse, serializeListForResponse } from '@hopak/core';
 import { Router } from '@hopak/core';
 
 const post = model('post', {
@@ -29,7 +29,9 @@ function bench(name: string, iters: number, fn: () => unknown): void {
   const elapsedNs = Bun.nanoseconds() - start;
   const perOp = elapsedNs / iters;
   const opsSec = (1e9 / perOp).toFixed(0);
-  console.log(`  ${name.padEnd(45)} ${perOp.toFixed(1).padStart(10)} ns/op   ${opsSec.padStart(10)} ops/s`);
+  console.log(
+    `  ${name.padEnd(45)} ${perOp.toFixed(1).padStart(10)} ns/op   ${opsSec.padStart(10)} ops/s`,
+  );
 }
 
 console.log('=== Serialize ===');
@@ -38,7 +40,13 @@ bench('serializeForResponse (single row)', 100_000, () => serializeForResponse(r
 
 console.log('\n=== Router ===');
 const router = new Router();
-const verbs: ReadonlyArray<'GET'|'POST'|'PUT'|'PATCH'|'DELETE'> = ['GET','POST','PUT','PATCH','DELETE'];
+const verbs: ReadonlyArray<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'> = [
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+];
 for (let i = 0; i < 50; i++) {
   for (const m of verbs) {
     router.add(m, `/api/model${i}/[id]`, { handler: () => null });
