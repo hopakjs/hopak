@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/hopakjs/hopak/main/.github/assets/npm_white.png">
-    <img alt="Hopak.js — Backend framework" src="https://raw.githubusercontent.com/hopakjs/hopak/main/.github/assets/npm_black.png" width="520">
-  </picture>
+  <img alt="Hopak.js — Backend framework" src="https://raw.githubusercontent.com/hopakjs/hopak/main/.github/assets/npm_both.png" width="460">
 </p>
 
 # @hopak/testing
