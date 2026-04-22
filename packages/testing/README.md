@@ -81,6 +81,24 @@ exercise real scaffolded route files.
 const env = await createTestServer({ rootDir: process.cwd() });
 ```
 
+> **Migrations + `rootDir`.** When the target project has
+> `app/migrations/`, `createApp` skips `db.sync()` at boot just like
+> `hopak dev` does. Your test suite is then responsible for bringing
+> the schema up — either run `hopak migrate up` against the test DB
+> before the suite, or call the runner directly:
+>
+> ```ts
+> import { applyUp, loadMigrations } from '@hopak/core';
+>
+> const env = await createTestServer({ rootDir });
+> const { migrations } = await loadMigrations(`${rootDir}/app/migrations`);
+> await applyUp({ db: env.requireDb(), dialect: 'sqlite' }, migrations);
+> ```
+>
+> Mode 2 (`models`) keeps its straightforward `db.sync()` behavior —
+> perfect for unit tests that don't care about the committed schema
+> history.
+
 ### Mode 2: in-memory `models` + `router`
 
 For unit-ish tests where you wire a small router by hand.

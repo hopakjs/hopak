@@ -112,6 +112,12 @@ hopak sync      # CREATE TABLE IF NOT EXISTS for every model
 hopak dev
 ```
 
+`hopak sync` is the bootstrap path for new projects. The moment you
+need schema evolution (adding a column to an existing table), switch
+to migrations — `hopak migrate init` captures the current state, and
+`hopak migrate new <name>` is the canonical flow from there on. `sync`
+refuses to run once `app/migrations/` has files.
+
 ### `hopak dev`
 
 Runs the project with Bun's `--hot` mode plus a lightweight file
@@ -166,9 +172,11 @@ export default model('comment', {
 ```
 
 Edit the fields to match your domain. Generating the model alone
-gives you a DB table (after `hopak sync` or first `hopak dev` boot
-on SQLite) and a typed client via `ctx.db.model('comment')` — but
-no HTTP endpoints. Run `hopak generate crud comment` to add those.
+gives you a typed client via `ctx.db.model('comment')`; a DB table
+follows on the next `hopak sync` (or first `hopak dev` boot) on a
+project without migrations — if the project uses migrations, write
+`hopak migrate new add_comments` + `hopak migrate up`. Then
+`hopak generate crud comment` scaffolds the HTTP endpoints.
 
 #### `hopak generate crud <name>`
 
@@ -340,8 +348,15 @@ It also adds `JWT_SECRET` to `.env.example` and runs
 ```bash
 hopak use auth
 # → files created, deps installed
-# → next: copy .env.example → .env, set JWT_SECRET,
-#         hopak sync, hopak dev
+# → next: copy .env.example → .env, set JWT_SECRET
+#
+# no migrations yet:
+#   hopak sync && hopak dev
+#
+# migrations already in use:
+#   hopak migrate new add_users
+#   # fill in up/down with CREATE TABLE users (...)
+#   hopak migrate up && hopak dev
 ```
 
 If any scaffolded file already exists, the command refuses to
@@ -455,7 +470,8 @@ The CLI relies on the default Hopak layout unless you override paths:
 my-app/
 ├── app/
 │   ├── models/       # hopak generate model <name> writes here
-│   └── routes/       # hopak generate route/crud writes here
+│   ├── routes/       # hopak generate route/crud writes here
+│   └── migrations/   # hopak migrate init / new writes here
 ├── public/           # served as static files
 ├── .hopak/           # runtime state (db file, dev cert); gitignored
 ├── hopak.config.ts   # optional

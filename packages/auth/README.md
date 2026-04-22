@@ -32,13 +32,21 @@ hopak use auth
 # → adds JWT_SECRET to .env.example
 ```
 
+Then materialise the `users` table:
+
+- **No migrations yet:** `hopak sync && hopak dev`
+- **Migrations in use:** `hopak migrate new add_users`, fill in the
+  `CREATE TABLE users(...)` in `up()`, then `hopak migrate up`. The
+  model was already created above — it just needs a DB table to live in.
+
 The manual path:
 
 ```bash
 bun add @hopak/auth jose
 ```
 
-Peer deps: `@hopak/core`, `@hopak/common`, `jose ^5.6.0`. Works on Bun ≥ 1.3.
+Peer deps: `@hopak/core`, `@hopak/common`, `jose ^5.6.0 || ^6.0.0`.
+Works on Bun ≥ 1.3.
 
 ## Five-minute auth
 

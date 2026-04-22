@@ -2368,13 +2368,21 @@ Three SQL dialects supported, one API. SQLite ships with Bun (no install);
 Postgres and MySQL are opt-in via `hopak use postgres` / `hopak use mysql`.
 Drizzle under the hood, but you don't write Drizzle — you write models.
 
-The schema is created on `hopak dev`'s first boot via
-`CREATE TABLE IF NOT EXISTS` for every model. Run `hopak sync` to do the
-same thing explicitly without starting the server (useful in CI or on a
-fresh Postgres / MySQL database). This is **idempotent naive replay** —
-the same command is safe to run repeatedly, but it does **not** handle
-schema changes (`ALTER TABLE` / `RENAME` / `DROP`). For schema evolution
-during prototyping, drop the table and re-sync.
+On a fresh project, `hopak dev` and `hopak sync` create tables via
+`CREATE TABLE IF NOT EXISTS` for every model — plus `CREATE INDEX IF
+NOT EXISTS` for each `.index()` field. This path is **idempotent naive
+replay**: safe to run repeatedly, but doesn't handle schema changes
+(`ALTER TABLE` / `RENAME` / `DROP`).
+
+The moment `app/migrations/` contains files, this path shuts off —
+`hopak dev` boots without touching the schema and `hopak sync` exits
+`1` pointing at `hopak migrate up`. Migrations own schema evolution
+from that point on; see Recipe 24.
+
+Drift warning: if you change a model in a project that still uses
+sync (no migrations yet), the next `hopak sync` or `hopak dev` compares
+live columns against the model and prints a WARN pointing at
+`hopak migrate init`.
 
 ### Dialect matrix
 
@@ -2454,6 +2462,30 @@ await ctx.db.transaction(async (tx) => {
 ```
 
 See Recipe 15 for `FOR UPDATE` locking patterns.
+
+### `execute(sql, params?)` — arbitrary SQL
+
+For statements the typed client doesn't cover (`ALTER TABLE`, `PRAGMA`,
+`REFRESH MATERIALIZED VIEW`, introspection queries), drop to raw SQL:
+
+```ts
+await ctx.db.execute(
+  `ALTER TABLE posts ADD COLUMN slug TEXT`,
+);
+
+await ctx.db.execute(
+  `INSERT INTO audit (actor_id, action) VALUES (?, ?)`,
+  [userId, 'login'],
+);
+```
+
+Dialect-specific syntax — you're writing raw SQL, portability is your
+call. Parameter binding works on SQLite and MySQL; on Postgres it
+works outside a transaction but params aren't supported inside a tx
+callback (inline values or use `ctx.db.model(...)`).
+
+This is the same method the migration runner uses under the hood —
+migrations are just `execute` calls wrapped in a versioned file.
 
 ### Raw Drizzle access (escape hatch)
 
@@ -2576,7 +2608,9 @@ export default defineConfig({
   paths: {
     models: 'app/models',
     routes: 'app/routes',
+    migrations: 'app/migrations',   // where `hopak migrate *` writes files
     public: 'public',
+    hopakDir: '.hopak',             // runtime state (SQLite file, certs)
   },
   cors: {
     origins: ['http://localhost:5173'],
@@ -2594,7 +2628,8 @@ All paths can be relative — they resolve from the project root.
 my-app/
 ├── app/
 │   ├── models/        # one file per resource (hopak generate model)
-│   └── routes/        # file-based routing (hopak generate route / crud)
+│   ├── routes/        # file-based routing (hopak generate route / crud)
+│   └── migrations/    # versioned schema changes (hopak migrate new / up)
 ├── public/            # static files
 ├── .hopak/            # runtime state (SQLite file, dev certs); gitignored
 ├── hopak.config.ts    # optional
@@ -2615,9 +2650,14 @@ my-app/
 | `hopak generate crud <name>` | Scaffold the 2 CRUD route files for an existing model |
 | `hopak generate route <path>` | Add a route file |
 | `hopak generate cert` | Generate a self-signed dev HTTPS cert under `.hopak/certs/` |
-| `hopak sync` | Apply model schema to the database (`CREATE TABLE IF NOT EXISTS`) |
+| `hopak sync` | Create missing tables from models. Refuses once `app/migrations/` exists — prints drift warning when live columns lag the model |
+| `hopak migrate init` | Seed initial migration from current models |
+| `hopak migrate new <name>` | Empty up/down skeleton |
+| `hopak migrate up [--to ID] [--dry-run]` | Apply pending migrations |
+| `hopak migrate down [--steps N] [--to ID]` | Roll back (default: last 1) |
+| `hopak migrate status` | Applied / pending / missing |
 | `hopak check` | Audit project state (config, models, routes) |
-| `hopak use <capability>` | Switch dialect in an existing project: `sqlite` / `postgres` / `mysql` |
+| `hopak use <capability>` | Enable a capability: `sqlite` / `postgres` / `mysql` / `request-log` / `auth` |
 | `hopak use` | List available capabilities |
 | `hopak --version` | Show version |
 | `hopak --help` | Show help |

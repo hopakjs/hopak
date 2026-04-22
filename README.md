@@ -65,6 +65,43 @@ query ergonomics, validation, serialization, errors, HTTPS / CORS
 config, `hopak use`, `hopak sync`, `hopak check` all behave exactly
 as before.
 
+## Upgrading from 0.2.x to 0.3.0
+
+`@hopak/core@0.3.0` adds migrations. `hopak sync` still works for
+greenfield projects, but its role shifts — it's now the **dev
+bootstrap** path, not the schema-evolution path.
+
+**What changes if you're on 0.2.x:**
+
+- `hopak sync` now refuses to run (exit `1`) once `app/migrations/`
+  has any `.ts` files. The message points you at `hopak migrate up`.
+  If you never add migrations, `sync` behaves exactly as before.
+- `hopak dev`'s boot-time `db.sync()` is **skipped** when
+  `app/migrations/` has files. With migrations in place, the runtime
+  never alters the schema on its own — you control every change.
+- `hopak sync` now prints a drift warning when a model declares
+  columns the live DB doesn't have. This is informational; the
+  warning points you at `hopak migrate init` to start tracking.
+- `.index()` on a field now actually creates `CREATE INDEX IF NOT
+  EXISTS` during sync. It was silently ignored in 0.2.x — if you'd
+  added `.index()` expecting an index, re-run `hopak sync` to pick
+  it up. (No-op if the index already exists from other means.)
+- New public API: `ctx.db.execute(sql, params?)` for raw SQL —
+  mainly for migration files, but available everywhere.
+
+**To adopt migrations on an existing 0.2.x project:**
+
+```bash
+hopak migrate init       # captures the current model state
+hopak migrate up         # writes _hopak_migrations; no schema change
+```
+
+From here, every model change starts with `hopak migrate new <name>`.
+
+**Nothing breaks** if you don't want migrations yet. Keep using
+`hopak sync` until schema evolution (adding a column to an existing
+table) forces the move. See Recipe 25 for the full migration walkthrough.
+
 ## Quick start
 
 ```bash
