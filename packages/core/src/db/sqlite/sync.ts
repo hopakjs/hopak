@@ -7,7 +7,7 @@ import {
   syncSchemaGeneric,
 } from '../sql/ddl-emitter';
 
-const ops: DialectDdlOps = {
+export const ops: DialectDdlOps = {
   quote: (id) => `"${id}"`,
   idClause: '"id" INTEGER PRIMARY KEY AUTOINCREMENT',
   timestampClauses: [

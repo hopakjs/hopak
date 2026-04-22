@@ -14,7 +14,7 @@ export interface PostgresRunner {
   unsafe(query: string): Promise<unknown> | { execute(): Promise<unknown> };
 }
 
-const ops: DialectDdlOps = {
+export const ops: DialectDdlOps = {
   quote: (id) => `"${id}"`,
   idClause: '"id" SERIAL PRIMARY KEY',
   timestampClauses: [

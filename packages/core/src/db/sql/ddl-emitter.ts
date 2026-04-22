@@ -113,6 +113,33 @@ export function buildCreateTableSql(model: ModelDefinition, ops: DialectDdlOps):
   return `CREATE TABLE IF NOT EXISTS ${ops.quote(tableName)} (\n  ${lines.join(',\n  ')}\n)`;
 }
 
+/**
+ * `CREATE INDEX IF NOT EXISTS` for each field marked `.index()`.
+ * `UNIQUE` columns are skipped — the unique constraint already creates
+ * an implicit index everywhere, a second explicit one would be wasteful.
+ *
+ * `IF NOT EXISTS` works on SQLite (always), Postgres (9.5+), and
+ * MySQL 8.0.29+. If you run into an older MySQL, upgrade or open an
+ * issue and we'll add a catch-duplicate fallback.
+ */
+export function buildIndexStatements(
+  model: ModelDefinition,
+  ops: DialectDdlOps,
+): readonly string[] {
+  const tableName = pluralize(model.name);
+  const stmts: string[] = [];
+  for (const [fieldName, field] of Object.entries(model.fields)) {
+    if (isVirtual(field)) continue;
+    if (!field.index || field.unique) continue;
+    const columnName = columnNameFor(fieldName, field);
+    const indexName = `idx_${tableName}_${columnName}`;
+    stmts.push(
+      `CREATE INDEX IF NOT EXISTS ${ops.quote(indexName)} ON ${ops.quote(tableName)} (${ops.quote(columnName)})`,
+    );
+  }
+  return stmts;
+}
+
 export async function syncSchemaGeneric(
   runner: unknown,
   models: readonly ModelDefinition[],
@@ -120,6 +147,9 @@ export async function syncSchemaGeneric(
 ): Promise<void> {
   for (const model of orderByFkDependencies(models)) {
     await ops.run(runner, buildCreateTableSql(model, ops));
+    for (const stmt of buildIndexStatements(model, ops)) {
+      await ops.run(runner, stmt);
+    }
   }
 }
 

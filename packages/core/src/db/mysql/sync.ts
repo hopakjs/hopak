@@ -18,7 +18,7 @@ export interface MysqlRunner {
  */
 const TEXT_UNIQUE_PREFIX = 191;
 
-const ops: DialectDdlOps = {
+export const ops: DialectDdlOps = {
   quote: (id) => `\`${id}\``,
   idClause: '`id` INT AUTO_INCREMENT PRIMARY KEY',
   timestampClauses: [
