@@ -1,3 +1,4 @@
+import { dirname, join, posix, relative } from 'node:path';
 import type { DbDialect } from '@hopak/common';
 import { pluralize } from '@hopak/common';
 
@@ -122,8 +123,8 @@ export default model('post', {
   published: boolean().default(false),
 });
 `,
-      'app/routes/api/posts.ts': crudCollectionTemplate('post'),
-      'app/routes/api/posts/[id].ts': crudItemTemplate('post'),
+      'app/routes/api/posts.ts': crudCollectionTemplate('post', '../../models/post'),
+      'app/routes/api/posts/[id].ts': crudItemTemplate('post', '../../../models/post'),
       'app/routes/index.ts': `import { defineRoute } from '@hopak/core';
 
 export const GET = defineRoute({
@@ -154,13 +155,13 @@ export const GET = defineRoute({
 }
 
 /**
- * `app/routes/api/<plural>.ts` — list + create. The CLI writes this
- * on `hopak new` and `hopak generate crud <name>`; the framework
- * itself does nothing at runtime, the file is the source of truth.
+ * `<routesDir>/api/<plural>.ts` — list + create. `importPath` is the
+ * relative path (without `.ts`) from the route file to the model file,
+ * computed from `config.paths` so custom layouts work out of the box.
  */
-export function crudCollectionTemplate(modelName: string): string {
+export function crudCollectionTemplate(modelName: string, importPath: string): string {
   return `import { crud } from '@hopak/core';
-import ${modelName} from '../../models/${modelName}';
+import ${modelName} from '${importPath}';
 
 export const GET = crud.list(${modelName});
 export const POST = crud.create(${modelName});
@@ -168,11 +169,11 @@ export const POST = crud.create(${modelName});
 }
 
 /**
- * `app/routes/api/<plural>/[id].ts` — read / update / patch / delete.
+ * `<routesDir>/api/<plural>/[id].ts` — read / update / patch / delete.
  */
-export function crudItemTemplate(modelName: string): string {
+export function crudItemTemplate(modelName: string, importPath: string): string {
   return `import { crud } from '@hopak/core';
-import ${modelName} from '../../../models/${modelName}';
+import ${modelName} from '${importPath}';
 
 export const GET = crud.read(${modelName});
 export const PUT = crud.update(${modelName});
@@ -181,19 +182,37 @@ export const DELETE = crud.remove(${modelName});
 `;
 }
 
-export function crudRoutesFor(modelName: string): {
+export interface CrudPathsOptions {
+  /** Absolute path to the routes directory (config.paths.routes). */
+  readonly routesDir: string;
+  /** Absolute path to the models directory (config.paths.models). */
+  readonly modelsDir: string;
+}
+
+export function crudRoutesFor(
+  modelName: string,
+  paths: CrudPathsOptions,
+): {
   collection: { path: string; contents: string };
   item: { path: string; contents: string };
 } {
   const plural = pluralize(modelName);
+  const collectionPath = join(paths.routesDir, 'api', `${plural}.ts`);
+  const itemPath = join(paths.routesDir, 'api', plural, '[id].ts');
+  const modelPath = join(paths.modelsDir, modelName);
+  const toImport = (from: string) => {
+    const rel = relative(dirname(from), modelPath);
+    const pretty = rel.split(/[\\/]/).join(posix.sep);
+    return pretty.startsWith('.') ? pretty : `./${pretty}`;
+  };
   return {
     collection: {
-      path: `app/routes/api/${plural}.ts`,
-      contents: crudCollectionTemplate(modelName),
+      path: collectionPath,
+      contents: crudCollectionTemplate(modelName, toImport(collectionPath)),
     },
     item: {
-      path: `app/routes/api/${plural}/[id].ts`,
-      contents: crudItemTemplate(modelName),
+      path: itemPath,
+      contents: crudItemTemplate(modelName, toImport(itemPath)),
     },
   };
 }
