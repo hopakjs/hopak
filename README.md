@@ -2024,6 +2024,64 @@ default — override with the `createUser` option when your model has
 other required fields. Google works the same way from
 `@hopak/auth/oauth/google`.
 
+### 25. Evolve the schema with migrations
+
+**Goal:** change a model after day 1 without losing data — with
+reviewable `up`/`down`, rollback, and audit trail.
+
+`hopak sync` is for the dev bootstrap: it runs `CREATE TABLE IF NOT
+EXISTS` on first boot and nothing else. The moment you need to add a
+column, migrations take over.
+
+```bash
+hopak migrate init
+# → Created app/migrations/20260422T153012345_init.ts (CREATE TABLE for each model)
+
+hopak migrate new add_role_to_user
+# → Created app/migrations/20260422T160100_add_role_to_user.ts (empty up/down skeleton)
+```
+
+Fill in the skeleton:
+
+```ts
+import type { MigrationContext } from '@hopak/core';
+
+export const description = 'Add role column to user';
+
+export async function up(ctx: MigrationContext): Promise<void> {
+  await ctx.execute(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'`);
+}
+
+export async function down(ctx: MigrationContext): Promise<void> {
+  await ctx.execute(`ALTER TABLE users DROP COLUMN role`);
+}
+```
+
+Apply, inspect, rollback:
+
+```bash
+hopak migrate up              # applies pending
+hopak migrate up --dry-run    # preview without touching DB
+hopak migrate status          # applied / pending / missing
+hopak migrate down            # rollback last (or --steps N)
+```
+
+`ctx.db` inside `up`/`down` is the full Hopak client — data migrations
+(backfill a new column, rewrite rows) live in the same file as their DDL.
+
+Transactional contract:
+- **SQLite / Postgres:** each migration runs inside `db.transaction()`.
+- **MySQL:** DDL auto-commits, so migrations run without the outer tx;
+  the idiom is one DDL per file to keep failures recoverable.
+
+Once `app/migrations/` exists, `hopak sync` refuses to run — schema
+evolution lives in migrations exclusively. Before that point, `sync`
+is still the fastest path from `hopak new` to a working endpoint.
+
+If you change a model column while still on `sync`, the next `hopak
+dev` prints a drift warning pointing at `hopak migrate init` — the
+natural moment to adopt migrations.
+
 ---
 
 ## Models

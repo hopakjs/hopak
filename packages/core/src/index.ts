@@ -8,6 +8,7 @@ export * from './serialize';
 export * from './crud';
 export * from './app';
 export * from './db';
+export * from './migrations';
 export { hopak, type HopakInstance } from './hopak';
 export { defineConfig } from './config';
 export { buildBanner, type BannerInputs } from './banner';

@@ -30,15 +30,16 @@ class SqliteModelClient<TRow extends Record<string, unknown>>
 }
 
 /**
- * `bun` is `null` on a tx-view — a Database returned inside `transaction(fn)`
- * which shares the connection but isn't allowed to open/close it or start a
- * nested tx.
+ * `isTxView` flags a Database returned inside `transaction(fn)`. The tx
+ * shares the connection (so `execute` works) but can't open/close it or
+ * start a nested tx, and `sync()` is rejected.
  */
 interface SqliteInternal {
-  bun: BunDatabase | null;
+  bun: BunDatabase;
   drizzleDb: BunSQLiteDatabase;
   tables: Map<string, SQLiteTable>;
   models: readonly ModelDefinition[];
+  isTxView: boolean;
 }
 
 class SqliteDatabase implements Database {
@@ -73,14 +74,22 @@ class SqliteDatabase implements Database {
   }
 
   async sync(): Promise<void> {
-    if (!this.inner.bun) {
+    if (this.inner.isTxView) {
       throw new Error('sync() is not supported inside a transaction. Run migrations first.');
     }
     await syncSqliteSchema(this.inner.bun, this.inner.models);
   }
 
+  async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
+    const stmt = this.inner.bun.prepare(sql);
+    // bun:sqlite accepts string/number/bigint/boolean/null/Uint8Array bindings;
+    // callers at the `Database` interface pass `unknown` and SQLite coerces.
+    type Binding = string | number | bigint | boolean | null | Uint8Array;
+    stmt.run(...(params as Binding[]));
+  }
+
   async close(): Promise<void> {
-    if (this.inner.bun) this.inner.bun.close();
+    if (!this.inner.isTxView) this.inner.bun.close();
   }
 
   /**
@@ -91,15 +100,16 @@ class SqliteDatabase implements Database {
    * aren't supported in 0.1.0 — SAVEPOINTs are accessible via `raw()`.
    */
   async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
-    if (!this.inner.bun) {
+    if (this.inner.isTxView) {
       throw new Error('Nested transactions are not supported in 0.1.0');
     }
     const bun = this.inner.bun;
     const txDb = new SqliteDatabase({
-      bun: null,
+      bun,
       drizzleDb: this.inner.drizzleDb,
       tables: this.inner.tables,
       models: this.inner.models,
+      isTxView: true,
     });
     bun.run('BEGIN');
     try {
@@ -122,5 +132,5 @@ export function createSqliteDatabase(options: SqliteOptions): Database {
     const table = schema[model.name];
     if (table) tables.set(model.name, table);
   }
-  return new SqliteDatabase({ bun, drizzleDb, tables, models: options.models });
+  return new SqliteDatabase({ bun, drizzleDb, tables, models: options.models, isTxView: false });
 }

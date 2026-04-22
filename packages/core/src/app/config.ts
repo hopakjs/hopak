@@ -73,7 +73,7 @@ const DEFAULT_PATHS = {
   routes: 'app/routes',
   jobs: 'app/jobs',
   public: 'public',
-  migrations: 'migrations',
+  migrations: 'app/migrations',
   hopakDir: '.hopak',
 } as const;
 

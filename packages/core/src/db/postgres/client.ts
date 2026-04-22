@@ -1,4 +1,5 @@
 import { ConfigError } from '@hopak/common';
+import { sql as drizzleSql } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { ModelDefinition } from '../../model/define';
@@ -78,6 +79,19 @@ class PostgresDatabase implements Database {
       throw new Error('sync() is not supported inside a transaction. Run migrations first.');
     }
     await syncPostgresSchema(this.inner.sql, this.inner.models);
+  }
+
+  async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
+    if (this.inner.sql) {
+      await this.inner.sql.unsafe(sql, params as unknown[]);
+      return;
+    }
+    if (params.length > 0) {
+      throw new Error(
+        'execute(sql, params) is not supported inside a transaction on Postgres. Inline values or use ctx.db.model(...).',
+      );
+    }
+    await this.inner.drizzleDb.execute(drizzleSql.raw(sql));
   }
 
   async close(): Promise<void> {

@@ -2,6 +2,7 @@ import { type DbDialect, type Logger, createLogger } from '@hopak/common';
 import { runCheck } from './commands/check';
 import { runDev } from './commands/dev';
 import { runGenerate } from './commands/generate';
+import { runMigrate } from './commands/migrate';
 import { runNew } from './commands/new';
 import { runSync } from './commands/sync';
 import { runUse } from './commands/use';
@@ -19,7 +20,10 @@ Commands:
   dev                     Start dev server (hot reload)
   generate <kind> [<name>]  Scaffold files:
                           model | route | crud | cert
-  sync                    Apply model schema to the database (CREATE TABLE IF NOT EXISTS)
+  sync                    Create missing tables from models (dev bootstrap).
+                          Refuses when app/migrations/ exists — use migrate up.
+  migrate <sub>           Schema migrations:
+                          init | new <name> | up | down | status
   check                   Audit project state (config, models, routes)
   use <capability>        Enable a capability in an existing project
                           (sqlite, postgres, mysql, request-log, auth)
@@ -35,6 +39,9 @@ Examples:
   hopak generate route posts/[id]
   hopak generate cert           # dev HTTPS key + self-signed cert
   hopak sync
+  hopak migrate init            # capture current schema as first migration
+  hopak migrate new add_role    # empty up/down skeleton
+  hopak migrate up              # apply pending
   hopak use postgres
   hopak use request-log
   hopak use auth
@@ -123,10 +130,15 @@ const COMMANDS: Record<string, Command> = {
     describe: 'Enable a capability (sqlite, postgres, mysql, request-log, auth)',
     run: ({ args, log }) => runUse({ name: args[0], log }),
   },
+  migrate: {
+    describe: 'Schema migrations (init, new, up, down, status)',
+    run: ({ args, log }) => runMigrate({ args, log }),
+  },
 };
 
 const COMMAND_ALIASES: Record<string, string> = {
   g: 'generate',
+  m: 'migrate',
 };
 
 function resolveCommand(name: string): Command | undefined {

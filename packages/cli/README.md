@@ -20,6 +20,7 @@ runtime to materialize code or crypto on your behalf.
   - [hopak generate](#hopak-generate-kind-name)
   - [hopak use](#hopak-use-capability)
   - [hopak sync](#hopak-sync)
+  - [hopak migrate](#hopak-migrate)
   - [hopak check](#hopak-check)
   - [hopak --version / --help](#hopak---version----help)
 - [Project structure](#project-structure)
@@ -350,30 +351,66 @@ extension).
 
 ### `hopak sync`
 
-Applies the model schema to the database without starting the server
-— emits `CREATE TABLE IF NOT EXISTS` for every registered model,
-topologically sorted so FK targets are created before dependents
-(required for Postgres / MySQL; SQLite wouldn't care but is sorted
-anyway for consistency).
-
-Safe to run repeatedly (idempotent replay). Useful in CI, right
-after `hopak use postgres` on a fresh database, or before the first
-`hopak dev` on Postgres / MySQL.
+Create missing tables from the current models — dev bootstrap. Emits
+`CREATE TABLE IF NOT EXISTS` for every registered model and
+`CREATE INDEX IF NOT EXISTS` for each `.index()` field, topologically
+sorted so FK targets come before dependents.
 
 ```bash
 hopak sync
 ```
-
-Output:
 
 ```
 Syncing schema to database {"cwd":"/.../my-app"}
 Schema synchronized {"models":3,"dialect":"sqlite"}
 ```
 
-Does **not** handle schema changes (ALTER TABLE, rename, column
-drop). Versioned migrations — `generate` / `up` / `down` / `status`
-— will arrive in a later release under a different command name.
+Safe to run repeatedly. Useful in CI, right after `hopak use postgres`
+on a fresh database, or before the first `hopak dev` on Postgres /
+MySQL. Does not ALTER existing tables — the moment model columns drift
+from the DB, `sync` prints a drift warning pointing at `hopak migrate`.
+
+Once `app/migrations/` exists, `sync` refuses to run and directs you
+to `hopak migrate up` so the two mechanisms never fight.
+
+### `hopak migrate`
+
+Schema evolution with history and rollback. Subcommands:
+
+| Command | Effect |
+|---|---|
+| `hopak migrate init` | Generate initial migration from current models (one time) |
+| `hopak migrate new <name>` | Empty skeleton file with `up`/`down` |
+| `hopak migrate up [--to ID] [--dry-run]` | Apply pending migrations |
+| `hopak migrate down [--steps N] [--to ID]` | Roll back (default: last 1) |
+| `hopak migrate status` | Applied / pending / missing |
+
+Each migration is one `.ts` file in `app/migrations/`:
+
+```ts
+// app/migrations/20260422T160100_add_role.ts
+import type { MigrationContext } from '@hopak/core';
+
+export const description = 'Add role column to user';
+
+export async function up(ctx: MigrationContext): Promise<void> {
+  await ctx.execute(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'`);
+}
+
+export async function down(ctx: MigrationContext): Promise<void> {
+  await ctx.execute(`ALTER TABLE users DROP COLUMN role`);
+}
+```
+
+`ctx.db` is the full Hopak db client — use it for data migrations
+(backfill columns, rewrite rows) alongside DDL in the same file.
+
+SQLite + Postgres run each migration inside a transaction. MySQL
+auto-commits DDL, so split multi-step changes into separate files;
+drift partway through leaves partial state otherwise.
+
+See core `README` → "Evolve the schema with migrations" for the
+full walkthrough.
 
 ### `hopak check`
 

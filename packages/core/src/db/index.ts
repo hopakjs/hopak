@@ -4,3 +4,4 @@ export { createDatabase, type CreateDatabaseOptions } from './factory';
 export { createSqliteDatabase, type SqliteOptions } from './sqlite';
 export { createPostgresDatabase, type PostgresOptions } from './postgres';
 export { createMysqlDatabase, type MysqlOptions } from './mysql';
+export { detectDrift, listColumns, type DriftReport } from './sql/introspect';

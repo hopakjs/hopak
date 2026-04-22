@@ -13,7 +13,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 export type PostgresFactory = (url: string, options?: Record<string, unknown>) => PostgresSql;
 
 export interface PostgresSql {
-  unsafe(query: string): Promise<unknown>;
+  unsafe(query: string, params?: readonly unknown[]): Promise<unknown>;
   end(options?: { timeout?: number }): Promise<void>;
 }
 

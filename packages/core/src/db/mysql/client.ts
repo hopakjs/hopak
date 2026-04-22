@@ -1,4 +1,5 @@
 import { ConfigError, NotFound } from '@hopak/common';
+import { sql as drizzleSql } from 'drizzle-orm';
 import type { MySqlTable } from 'drizzle-orm/mysql-core';
 import type { MySql2Database } from 'drizzle-orm/mysql2';
 import type { ModelDefinition } from '../../model/define';
@@ -179,6 +180,19 @@ class MysqlDatabase implements Database {
       throw new Error('sync() is not supported inside a transaction. Run migrations first.');
     }
     await syncMysqlSchema(this.inner.pool, this.inner.models);
+  }
+
+  async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
+    if (this.inner.pool) {
+      await this.inner.pool.execute(sql, params as unknown[]);
+      return;
+    }
+    if (params.length > 0) {
+      throw new Error(
+        'execute(sql, params) is not supported inside a transaction on MySQL. Inline values or use ctx.db.model(...).',
+      );
+    }
+    await this.inner.drizzleDb.execute(drizzleSql.raw(sql));
   }
 
   async close(): Promise<void> {

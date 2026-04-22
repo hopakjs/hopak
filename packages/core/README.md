@@ -1825,6 +1825,128 @@ Swap the generator for ULIDs or any id scheme you like:
 .before(requestId({ generate: () => someUlid() }))
 ```
 
+### 24. Evolve the schema with migrations
+
+**Goal:** change a model after day 1 without losing data — with
+reviewable `up`/`down` files, rollback, and audit trail.
+
+`hopak sync` is for the dev bootstrap: it runs `CREATE TABLE IF NOT
+EXISTS` on first boot and nothing else. The moment you need to add a
+column to an existing table, migrations take over.
+
+#### First migration — capture current state
+
+```bash
+hopak migrate init
+# → Created app/migrations/20260422T153012345_init.ts
+```
+
+Generated file: one `ctx.execute(...)` per table for each dialect.
+Commit it. Now `hopak sync` refuses to run:
+
+```
+$ hopak sync
+This project uses migrations. Run `hopak migrate up` to apply pending
+schema changes.
+```
+
+#### Add a column
+
+1. Edit the model:
+   ```ts
+   // app/models/user.ts
+   export default model('user', {
+     name: text().required(),
+     email: email().required().unique(),
+     role: text().default('user'),   // new
+   });
+   ```
+
+2. Create a migration:
+   ```bash
+   hopak migrate new add_role_to_user
+   # → Created app/migrations/20260422T160100123_add_role_to_user.ts
+   ```
+
+3. Fill in `up`/`down`:
+   ```ts
+   import type { MigrationContext } from '@hopak/core';
+
+   export const description = 'Add role to user';
+
+   export async function up(ctx: MigrationContext): Promise<void> {
+     await ctx.execute(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'`);
+   }
+
+   export async function down(ctx: MigrationContext): Promise<void> {
+     await ctx.execute(`ALTER TABLE users DROP COLUMN role`);
+   }
+   ```
+
+4. Apply:
+   ```bash
+   hopak migrate up
+   # → Applying 20260422T160100123_add_role_to_user — Add role to user
+   # → Applied 1 migration(s).
+   ```
+
+Rollback with `hopak migrate down`. Status with `hopak migrate status`.
+Preview with `hopak migrate up --dry-run` before touching prod.
+
+#### Data migrations — same file
+
+`ctx.db` is the full Hopak client inside `up`/`down`, so schema
+changes and data backfills live in one migration:
+
+```ts
+export async function up(ctx: MigrationContext): Promise<void> {
+  await ctx.execute(`ALTER TABLE posts ADD COLUMN slug TEXT`);
+  const posts = await ctx.db.model('post').findMany();
+  for (const p of posts) {
+    await ctx.db.model('post').update(p.id, { slug: slugify(p.title) });
+  }
+  await ctx.execute(`CREATE UNIQUE INDEX idx_posts_slug ON posts(slug)`);
+}
+```
+
+#### Transactional contract
+
+- **SQLite / Postgres** — every migration runs inside `db.transaction()`.
+  A throw inside `up` rolls back every DDL and data change.
+- **MySQL** — most DDL auto-commits, so the transactional wrap is
+  skipped. Failure partway leaves partial state. The idiom is one DDL
+  per migration file; split complex changes into separate files.
+
+#### Drift warning — bridge from sync to migrate
+
+If you change a model in a project that still uses `sync` (no
+`app/migrations/` yet) and restart the server, `sync` prints:
+
+```
+⚠ Model schema drifted from the database. `hopak sync` only creates
+  new tables; column changes need a migration:
+    users: missing columns "role"
+
+  hopak migrate init       # one-time: capture current state
+  hopak migrate new <name> # write ALTER TABLE up/down
+```
+
+This is the natural moment to adopt migrations. Nothing forces it —
+dev DBs you drop on every iteration never need them.
+
+#### Escape hatch
+
+`ctx.execute(sql, params?)` is dialect-specific SQL. For multi-dialect
+apps, branch on `ctx.dialect`:
+
+```ts
+if (ctx.dialect === 'sqlite') {
+  await ctx.execute(`ALTER TABLE posts ADD COLUMN count INTEGER DEFAULT 0`);
+} else {
+  await ctx.execute(`ALTER TABLE posts ADD COLUMN count INT DEFAULT 0`);
+}
+```
+
 ---
 
 ## Models

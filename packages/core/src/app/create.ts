@@ -1,9 +1,17 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { type HopakConfig, type HopakConfigInput, type Logger, createLogger } from '@hopak/common';
+import {
+  type HopakConfig,
+  type HopakConfigInput,
+  type Logger,
+  createLogger,
+  pathExists,
+} from '@hopak/common';
+import { Glob } from 'bun';
 import type { Database } from '../db/client';
 import { createDatabase } from '../db/factory';
 import { translateConnectError } from '../db/sql/connect-translator';
+import { detectDrift } from '../db/sql/introspect';
 import { loadDevCert } from '../http/certs';
 import { loadFileRoutes } from '../http/loader';
 import { EMPTY_MIDDLEWARE, type Middleware } from '../http/middleware';
@@ -57,7 +65,11 @@ async function ensureWritableDirs(config: HopakConfig): Promise<void> {
   await mkdir(config.paths.hopakDir, { recursive: true });
 }
 
-async function connectDatabase(config: HopakConfig, registry: ModelRegistry): Promise<Database> {
+async function connectDatabase(
+  config: HopakConfig,
+  registry: ModelRegistry,
+  log: Logger,
+): Promise<Database> {
   const db = createDatabase({
     dialect: config.database.dialect,
     models: registry.all(),
@@ -65,11 +77,41 @@ async function connectDatabase(config: HopakConfig, registry: ModelRegistry): Pr
     url: config.database.url,
   });
   try {
-    await db.sync();
+    if (await hasMigrationsDir(config.paths.migrations)) {
+      log.debug('Schema evolution managed by migrations/ — skipping sync');
+    } else {
+      await db.sync();
+      await warnOnDrift(db, config, registry, log);
+    }
   } catch (error) {
     throw translateConnectError(error, config.database.dialect, config.database.url);
   }
   return db;
+}
+
+async function warnOnDrift(
+  db: Database,
+  config: HopakConfig,
+  registry: ModelRegistry,
+  log: Logger,
+): Promise<void> {
+  const drift = await detectDrift(db, config.database.dialect, registry.all());
+  if (drift.length === 0) return;
+  const list = drift
+    .map(
+      (d) => `    ${d.table}: missing columns ${d.missingColumns.map((c) => `"${c}"`).join(', ')}`,
+    )
+    .join('\n');
+  log.warn(
+    `Model schema drifted from the database. \`hopak sync\` only creates new tables; column changes need a migration:\n${list}\n\n  hopak migrate init       # one-time: capture current state\n  hopak migrate new <name> # write ALTER TABLE up/down`,
+  );
+}
+
+async function hasMigrationsDir(dir: string): Promise<boolean> {
+  if (!(await pathExists(dir))) return false;
+  const glob = new Glob('*.ts');
+  for await (const _ of glob.scan({ cwd: dir })) return true;
+  return false;
 }
 
 async function buildRouter(config: HopakConfig, log: Logger): Promise<Router> {
@@ -125,7 +167,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
 
   const registry = await discoverModels(config, log);
   await ensureWritableDirs(config);
-  const db = await connectDatabase(config, registry);
+  const db = await connectDatabase(config, registry, log);
   const router = await buildRouter(config, log);
 
   let server: ListeningServer | undefined;

@@ -192,6 +192,14 @@ export interface Database {
   sync(): Promise<void>;
   close(): Promise<void>;
   /**
+   * Run a parameterised SQL statement directly against the connection.
+   * Dialect-specific — the caller is responsible for portable syntax.
+   * Intended for migrations (`ALTER TABLE …`) and introspection
+   * (`PRAGMA` / `information_schema`). No result rows are returned;
+   * for selects use `.model(...)` or `raw()`.
+   */
+  execute(sql: string, params?: readonly unknown[]): Promise<void>;
+  /**
    * Run `fn` inside a database transaction. Commits when `fn` resolves,
    * rolls back if `fn` (or any query inside) throws. The `tx` argument is a
    * scoped `Database` whose `model(name)` returns clients bound to the
