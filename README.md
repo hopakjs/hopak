@@ -1,5 +1,8 @@
 <p align="center">
-  <img src=".github/assets/git_banner.png" alt="Hopak.js — Backend framework" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo_black.png">
+    <img alt="Hopak.js — Backend framework" src=".github/assets/logo_white.png" width="640">
+  </picture>
 </p>
 
 <p align="center">
