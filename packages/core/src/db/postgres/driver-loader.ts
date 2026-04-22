@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { ConfigError } from '@hopak/common';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -21,7 +22,11 @@ export interface DrizzleAdapter {
   drizzle(sql: PostgresSql): PostgresJsDatabase;
 }
 
-const require_ = createRequire(import.meta.url);
+// Resolve from the user's project (cwd), not from this file. When the CLI
+// is installed globally, the project's `postgres` driver sits in the
+// project's `node_modules`, not alongside core — require() walking up from
+// here would never find it.
+const require_ = createRequire(join(process.cwd(), 'noop.js'));
 
 let cachedDriver: PostgresFactory | undefined;
 let cachedAdapter: DrizzleAdapter | undefined;

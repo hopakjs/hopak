@@ -17,8 +17,10 @@ const SQL: Record<DbDialect, string> = {
   sqlite: 'SELECT name AS column_name FROM pragma_table_info(?)',
   postgres:
     'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+  // MySQL's information_schema uppercases identifiers; the back-ticked alias
+  // preserves the lowercase name we expect when reading `row.column_name`.
   mysql:
-    'SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?',
+    'SELECT column_name AS `column_name` FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ?',
 };
 
 export async function listColumns(
@@ -50,10 +52,32 @@ export async function listColumns(
   const safe = table.replace(/'/g, "''");
   const paramised = statement.replace(/\$1|\?/, `'${safe}'`);
   const result = await raw.execute?.(drizzleSql.raw(paramised));
-  const rows = Array.isArray(result)
-    ? (result[0] ?? [])
-    : ((result as { rows?: unknown[] } | undefined)?.rows ?? []);
-  return (rows as Array<{ column_name: unknown }>).map((r) => String(r.column_name));
+  const rows = extractRows(result);
+  return rows.map((r) => String((r as { column_name: unknown }).column_name));
+}
+
+/**
+ * Each driver spells its result differently:
+ *   - postgres.js (pg)       → proxy whose iteration yields rows
+ *   - drizzle-wrapped pg     → `{ rows: [...] }`
+ *   - mysql2                 → `[rows, fields]`
+ *   - already-unwrapped array
+ */
+function extractRows(result: unknown): readonly unknown[] {
+  if (!result) return [];
+  if (Array.isArray(result)) {
+    // mysql2: [rows, fields]; pg.js sometimes: Array-like of rows; pick the
+    // form that looks like rows (objects with string keys) vs the [rows, _] tuple.
+    if (result.length === 2 && Array.isArray(result[0])) return result[0];
+    return result;
+  }
+  const r = result as { rows?: unknown[] };
+  if (Array.isArray(r.rows)) return r.rows;
+  // postgres.js returns a Result object that's also iterable.
+  if (typeof (result as { [Symbol.iterator]?: unknown })[Symbol.iterator] === 'function') {
+    return Array.from(result as Iterable<unknown>);
+  }
+  return [];
 }
 
 export interface DriftReport {

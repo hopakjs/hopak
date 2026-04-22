@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { ConfigError } from '@hopak/common';
 import type { MySql2Database } from 'drizzle-orm/mysql2';
 
@@ -23,7 +24,9 @@ export interface DrizzleMysqlAdapter {
   drizzle(pool: MysqlPool): MySql2Database;
 }
 
-const require_ = createRequire(import.meta.url);
+// See postgres/driver-loader.ts for rationale — resolve from the user's
+// project so a globally-installed CLI finds project-local drivers.
+const require_ = createRequire(join(process.cwd(), 'noop.js'));
 
 let cachedDriver: MysqlDriver | undefined;
 let cachedAdapter: DrizzleMysqlAdapter | undefined;
