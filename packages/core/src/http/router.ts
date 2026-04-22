@@ -88,7 +88,11 @@ function matchSegments(
 }
 
 export class Router {
+  // Flat list kept for list()/size()/sorting; per-verb buckets are the
+  // hot-path lookup — each match() scans only routes for its method,
+  // which on typical apps shrinks the pool by ~7× (one per HTTP verb).
   private readonly routes: CompiledRoute[] = [];
+  private readonly byMethod: Map<HttpMethod, CompiledRoute[]> = new Map();
 
   add(method: HttpMethod, pattern: string, definition: RouteDefinition, source?: string): void {
     const compiled: CompiledRoute = {
@@ -100,12 +104,21 @@ export class Router {
     };
     this.routes.push(compiled);
     this.routes.sort(compareRoutes);
+
+    let bucket = this.byMethod.get(method);
+    if (!bucket) {
+      bucket = [];
+      this.byMethod.set(method, bucket);
+    }
+    bucket.push(compiled);
+    bucket.sort(compareRoutes);
   }
 
   match(method: HttpMethod, path: string): RouteMatch | null {
+    const bucket = this.byMethod.get(method);
+    if (!bucket) return null;
     const requestSegments = splitPath(path);
-    for (const route of this.routes) {
-      if (route.method !== method) continue;
+    for (const route of bucket) {
       const params = matchSegments(route.segments, requestSegments);
       if (params !== null) return { route, params };
     }
@@ -119,17 +132,21 @@ export class Router {
    */
   allowedMethods(path: string): readonly HttpMethod[] {
     const requestSegments = splitPath(path);
-    const methods = new Set<HttpMethod>();
-    for (const route of this.routes) {
-      if (matchSegments(route.segments, requestSegments) !== null) {
-        methods.add(route.method);
+    const methods: HttpMethod[] = [];
+    for (const [method, bucket] of this.byMethod) {
+      for (const route of bucket) {
+        if (matchSegments(route.segments, requestSegments) !== null) {
+          methods.push(method);
+          break;
+        }
       }
     }
-    return [...methods];
+    return methods;
   }
 
   has(method: HttpMethod, pattern: string): boolean {
-    return this.routes.some((r) => r.method === method && r.pattern === pattern);
+    const bucket = this.byMethod.get(method);
+    return bucket ? bucket.some((r) => r.pattern === pattern) : false;
   }
 
   list(): readonly CompiledRoute[] {

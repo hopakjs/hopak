@@ -87,6 +87,6 @@ export function oauthCallback(
 function defaultUserRow(profile: ProviderProfile, model: ModelDefinition): Record<string, unknown> {
   const row: Record<string, unknown> = { email: profile.email };
   if ('name' in model.fields && profile.name) row.name = profile.name;
-  if ('password' in model.fields) row.password = `oauth:${crypto.randomUUID()}`;
+  if ('password' in model.fields) row.password = `oauth:${Bun.randomUUIDv7()}`;
   return row;
 }

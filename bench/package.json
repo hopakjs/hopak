@@ -1,0 +1,9 @@
+{
+  "name": "hopak-bench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hopak/core": "workspace:*",
+    "@hopak/testing": "workspace:*"
+  }
+}

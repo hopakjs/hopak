@@ -1,6 +1,4 @@
-import { stat } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
-import { isFile } from '@hopak/common';
 import { file as bunFile } from 'bun';
 
 export interface StaticOptions {
@@ -37,18 +35,20 @@ export function createStaticHandler(options: StaticOptions): StaticHandler {
     async serve(url) {
       const target = resolveTarget(root, url.pathname);
       if (!isPathSafe(root, target)) return null;
-      if (!(await isFile(target))) return null;
 
       const file = bunFile(target);
-      const stats = await stat(target);
+      if (!(await file.exists())) return null;
+
+      const size = file.size;
+      const mtimeMs = file.lastModified;
 
       return new Response(file, {
         headers: {
           'Content-Type': file.type || FALLBACK_MIME,
-          'Content-Length': String(stats.size),
+          'Content-Length': String(size),
           'Cache-Control': STATIC_CACHE_CONTROL,
-          ETag: buildEtag(stats.size, stats.mtimeMs),
-          'Last-Modified': new Date(stats.mtimeMs).toUTCString(),
+          ETag: buildEtag(size, mtimeMs),
+          'Last-Modified': new Date(mtimeMs).toUTCString(),
         },
       });
     },

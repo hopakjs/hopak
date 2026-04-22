@@ -30,23 +30,35 @@ export interface PipelineOptions {
 }
 
 const STATIC_METHODS: ReadonlySet<string> = new Set(['GET', 'HEAD']);
+const JSON_CONTENT_TYPE = 'application/json;charset=utf-8';
+const METHOD_NOT_ALLOWED_GENERIC = new TextEncoder().encode(
+  '{"error":"METHOD_NOT_ALLOWED","message":"Method Not Allowed"}',
+);
 
 function notFoundResponse(method: string, path: string): Response {
-  return Response.json(
-    { error: 'NOT_FOUND', message: `No route for ${method} ${path}` },
-    { status: HttpStatus.NotFound },
+  return new Response(
+    JSON.stringify({ error: 'NOT_FOUND', message: `No route for ${method} ${path}` }),
+    { status: HttpStatus.NotFound, headers: { 'content-type': JSON_CONTENT_TYPE } },
   );
 }
 
 function methodNotAllowedResponse(allowed: readonly string[] = []): Response {
-  const headers: Record<string, string> = { 'content-type': 'application/json;charset=utf-8' };
-  if (allowed.length > 0) headers.Allow = allowed.join(', ');
+  if (allowed.length === 0) {
+    return new Response(METHOD_NOT_ALLOWED_GENERIC, {
+      status: HttpStatus.MethodNotAllowed,
+      headers: { 'content-type': JSON_CONTENT_TYPE },
+    });
+  }
+  const allowHeader = allowed.join(', ');
   return new Response(
     JSON.stringify({
       error: 'METHOD_NOT_ALLOWED',
-      message: allowed.length > 0 ? `Allowed methods: ${allowed.join(', ')}` : 'Method Not Allowed',
+      message: `Allowed methods: ${allowHeader}`,
     }),
-    { status: HttpStatus.MethodNotAllowed, headers },
+    {
+      status: HttpStatus.MethodNotAllowed,
+      headers: { 'content-type': JSON_CONTENT_TYPE, Allow: allowHeader },
+    },
   );
 }
 

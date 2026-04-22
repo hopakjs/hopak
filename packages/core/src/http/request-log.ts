@@ -11,7 +11,7 @@ declare module './types' {
 export interface RequestIdOptions {
   /** Response header name. Default `X-Request-Id`. */
   header?: string;
-  /** Override ID generation (e.g. a custom ULID). Default: `crypto.randomUUID()`. */
+  /** Override ID generation (e.g. a custom ULID). Default: `Bun.randomUUIDv7()` — time-sortable. */
   generate?: () => string;
 }
 
@@ -22,7 +22,7 @@ export interface RequestIdOptions {
  */
 export function requestId(options: RequestIdOptions = {}): Before {
   const header = options.header ?? 'X-Request-Id';
-  const gen = options.generate ?? (() => crypto.randomUUID());
+  const gen = options.generate ?? (() => Bun.randomUUIDv7());
   return (ctx) => {
     ctx.requestId = gen();
     ctx.setHeader(header, ctx.requestId);

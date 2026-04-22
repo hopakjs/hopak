@@ -28,14 +28,6 @@ function buildOriginPolicy(options: CorsOptions): OriginPolicy {
   };
 }
 
-function corsHeaders(origin: string, credentials: boolean): Headers {
-  const headers = new Headers();
-  headers.set('Access-Control-Allow-Origin', origin);
-  headers.set('Vary', 'Origin');
-  if (credentials) headers.set('Access-Control-Allow-Credentials', 'true');
-  return headers;
-}
-
 export function createCorsHandler(options: CorsOptions): CorsHandler {
   const policy = buildOriginPolicy(options);
   const credentials = options.credentials ?? false;
@@ -44,15 +36,20 @@ export function createCorsHandler(options: CorsOptions): CorsHandler {
     apply(req, response) {
       const origin = policy.resolve(req);
       if (!origin) return response;
-      const headers = corsHeaders(origin, credentials);
-      headers.forEach((value, key) => response.headers.set(key, value));
+      const headers = response.headers;
+      headers.set('Access-Control-Allow-Origin', origin);
+      headers.set('Vary', 'Origin');
+      if (credentials) headers.set('Access-Control-Allow-Credentials', 'true');
       return response;
     },
     preflight(req) {
       if (req.method !== PREFLIGHT_METHOD) return null;
       const origin = policy.resolve(req);
       if (!origin) return null;
-      const headers = corsHeaders(origin, credentials);
+      const headers = new Headers();
+      headers.set('Access-Control-Allow-Origin', origin);
+      headers.set('Vary', 'Origin');
+      if (credentials) headers.set('Access-Control-Allow-Credentials', 'true');
       headers.set('Access-Control-Allow-Methods', PREFLIGHT_ALLOWED_METHODS);
       const requested = req.headers.get('access-control-request-headers');
       if (requested) headers.set('Access-Control-Allow-Headers', requested);
