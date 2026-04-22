@@ -136,7 +136,7 @@ hopak dev
 On start:
 
 ```
-  Hopak.js v0.3.4
+  Hopak.js v0.4.4
   ↳ Listening on http://localhost:3000
   ↳ Database: sqlite
 ```

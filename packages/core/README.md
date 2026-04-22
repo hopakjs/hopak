@@ -236,10 +236,10 @@ Response (`400 Bad Request`):
   "error": "VALIDATION_ERROR",
   "message": "Invalid body",
   "details": {
-    "name":  ["Too small: expected string to have >=2 characters"],
-    "email": ["Invalid email address"],
-    "age":   ["Too small: expected number to be >=18"],
-    "role":  ["Invalid option: expected one of \"admin\"|\"user\"|\"guest\""]
+    "name":  ["Invalid length: Expected >=2 but received 1"],
+    "email": ["Invalid email: Received \"not-an-email\""],
+    "age":   ["Invalid value: Expected >=18 but received 5"],
+    "role":  ["Invalid type: Expected (\"admin\" | \"user\" | \"guest\") but received \"superman\""]
   }
 }
 ```
@@ -2338,8 +2338,8 @@ Failures return `400`:
   "error": "VALIDATION_ERROR",
   "message": "Invalid body",
   "details": {
-    "title": ["Too small: expected string to have >=3 characters"],
-    "content": ["Invalid input: expected string, received undefined"]
+    "title": ["Invalid length: Expected >=3 but received 2"],
+    "content": ["Invalid key: Expected \"content\" but received undefined"]
   }
 }
 ```
