@@ -24,35 +24,44 @@ export interface DrizzleMysqlAdapter {
   drizzle(pool: MysqlPool): MySql2Database;
 }
 
-// See postgres/driver-loader.ts for rationale — resolve from the user's
-// project so a globally-installed CLI finds project-local drivers.
-const require_ = createRequire(join(process.cwd(), 'noop.js'));
+// See postgres/driver-loader.ts — try cwd first (global CLI case), then
+// fall back to this file's location (monorepo / hoisted deps).
+const requireFromCwd = createRequire(join(process.cwd(), 'noop.js'));
+const requireFromHere = createRequire(import.meta.url);
+
+function tryRequire<T>(id: string): T | null {
+  for (const req of [requireFromCwd, requireFromHere]) {
+    try {
+      return req(id) as T;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'MODULE_NOT_FOUND' && code !== 'ERR_MODULE_NOT_FOUND') throw error;
+    }
+  }
+  return null;
+}
 
 let cachedDriver: MysqlDriver | undefined;
 let cachedAdapter: DrizzleMysqlAdapter | undefined;
 
 export function loadMysqlDriver(): MysqlDriver {
   if (cachedDriver) return cachedDriver;
-  try {
-    const loaded = require_('mysql2/promise') as MysqlDriver;
-    cachedDriver = loaded;
-    return loaded;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'MODULE_NOT_FOUND' || code === 'ERR_MODULE_NOT_FOUND') {
-      throw new ConfigError(
-        'MySQL driver not installed. Run: hopak use mysql (or: bun add mysql2)',
-      );
-    }
-    throw error;
+  const loaded = tryRequire<MysqlDriver>('mysql2/promise');
+  if (!loaded) {
+    throw new ConfigError(
+      'MySQL driver not installed. Run: hopak use mysql (or: bun add mysql2)',
+    );
   }
+  cachedDriver = loaded;
+  return loaded;
 }
 
 export function loadDrizzleMysqlAdapter(): DrizzleMysqlAdapter {
   if (cachedAdapter) return cachedAdapter;
   // Trigger the driver check first so the user sees the clearer error.
   loadMysqlDriver();
-  const adapter = require_('drizzle-orm/mysql2') as DrizzleMysqlAdapter;
+  const adapter = tryRequire<DrizzleMysqlAdapter>('drizzle-orm/mysql2');
+  if (!adapter) throw new ConfigError('drizzle-orm/mysql2 not resolvable.');
   cachedAdapter = adapter;
   return adapter;
 }

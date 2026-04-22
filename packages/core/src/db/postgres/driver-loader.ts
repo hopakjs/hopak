@@ -22,31 +22,39 @@ export interface DrizzleAdapter {
   drizzle(sql: PostgresSql): PostgresJsDatabase;
 }
 
-// Resolve from the user's project (cwd), not from this file. When the CLI
-// is installed globally, the project's `postgres` driver sits in the
-// project's `node_modules`, not alongside core — require() walking up from
-// here would never find it.
-const require_ = createRequire(join(process.cwd(), 'noop.js'));
+// Try resolving from the user's project first (so a globally-installed CLI
+// finds drivers that live in the app's `node_modules`), then fall back to
+// this file's location (so tests and monorepo-local installs also work
+// where the dep is hoisted alongside `@hopak/core`).
+const requireFromCwd = createRequire(join(process.cwd(), 'noop.js'));
+const requireFromHere = createRequire(import.meta.url);
+
+function tryRequire<T>(id: string): T | null {
+  for (const req of [requireFromCwd, requireFromHere]) {
+    try {
+      return req(id) as T;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'MODULE_NOT_FOUND' && code !== 'ERR_MODULE_NOT_FOUND') throw error;
+    }
+  }
+  return null;
+}
 
 let cachedDriver: PostgresFactory | undefined;
 let cachedAdapter: DrizzleAdapter | undefined;
 
 export function loadPostgresDriver(): PostgresFactory {
   if (cachedDriver) return cachedDriver;
-  try {
-    const loaded = require_('postgres') as PostgresFactory | { default: PostgresFactory };
-    const factory = typeof loaded === 'function' ? loaded : loaded.default;
-    cachedDriver = factory;
-    return factory;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'MODULE_NOT_FOUND' || code === 'ERR_MODULE_NOT_FOUND') {
-      throw new ConfigError(
-        'Postgres driver not installed. Run: hopak use postgres (or: bun add postgres)',
-      );
-    }
-    throw error;
+  const loaded = tryRequire<PostgresFactory | { default: PostgresFactory }>('postgres');
+  if (!loaded) {
+    throw new ConfigError(
+      'Postgres driver not installed. Run: hopak use postgres (or: bun add postgres)',
+    );
   }
+  const factory = typeof loaded === 'function' ? loaded : loaded.default;
+  cachedDriver = factory;
+  return factory;
 }
 
 export function loadDrizzleAdapter(): DrizzleAdapter {
@@ -54,7 +62,8 @@ export function loadDrizzleAdapter(): DrizzleAdapter {
   // Loading `drizzle-orm/postgres-js` transitively requires `postgres`, so
   // check the driver first to emit the clearer error message.
   loadPostgresDriver();
-  const adapter = require_('drizzle-orm/postgres-js') as DrizzleAdapter;
+  const adapter = tryRequire<DrizzleAdapter>('drizzle-orm/postgres-js');
+  if (!adapter) throw new ConfigError('drizzle-orm/postgres-js not resolvable.');
   cachedAdapter = adapter;
   return adapter;
 }
