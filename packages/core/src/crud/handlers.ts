@@ -1,5 +1,5 @@
 import { HttpStatus, ValidationError } from '@hopak/common';
-import type { z } from 'zod';
+import type * as v from 'valibot';
 import type { ModelClient } from '../db/client';
 import type { RequestContext } from '../http/types';
 import type { ModelDefinition } from '../model/define';
@@ -43,7 +43,7 @@ function clientFor(ctx: RequestContext, model: ModelDefinition): ModelClient {
   return ctx.db.model(model.name);
 }
 
-function validateBody(schema: z.ZodType, body: unknown): Record<string, unknown> {
+function validateBody(schema: v.GenericSchema, body: unknown): Record<string, unknown> {
   const result = validate<Record<string, unknown>>(schema, body ?? {});
   if (!result.ok) throw new ValidationError('Invalid body', result.errors);
   return result.data;

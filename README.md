@@ -107,6 +107,46 @@ From here, every model change starts with `hopak migrate new <name>`.
 `hopak sync` until schema evolution (adding a column to an existing
 table) forces the move. See Recipe 25 for the full migration walkthrough.
 
+## Upgrading from 0.3.x to 0.4.0
+
+`@hopak/core@0.4.0` swaps the validation runtime from **Zod** to
+**Valibot** — ~10× smaller bundle, ~2–3× faster parse, same
+`validate()` / `buildModelSchema()` API. Code using only Hopak's
+model-driven validation keeps working untouched.
+
+**What actually changes:**
+
+- `@hopak/core` no longer depends on `zod`. If your own project code
+  imported `zod` transitively through `@hopak/core`, add it to your
+  own `package.json`.
+- `RouteSchemas.body | query | params` types are now Valibot schemas
+  (`v.GenericSchema`), not `z.ZodType`. Route files that passed Zod
+  schemas directly need to switch to Valibot:
+
+  ```ts
+  // before
+  import { z } from 'zod';
+  export const post: RouteHandler = {
+    body: z.object({ title: z.string().min(3) }),
+    handler: async (ctx) => { /* ... */ },
+  };
+
+  // after
+  import * as v from 'valibot';
+  export const post: RouteHandler = {
+    body: v.object({ title: v.pipe(v.string(), v.minLength(3)) }),
+    handler: async (ctx) => { /* ... */ },
+  };
+  ```
+
+- Error messages from validators use Valibot's defaults. If your
+  tests assert on exact message text, re-snapshot.
+- `ZodFieldSchema` type export renamed to `FieldSchema`.
+
+**To adopt:** `bun add valibot` in your project, rewrite any
+hand-rolled schemas in route files using `v.*` primitives. Model
+schemas built via `buildModelSchema(model)` need no changes.
+
 ## Quick start
 
 ```bash
@@ -2721,7 +2761,7 @@ snippet to paste manually and exits non-zero — predictable in CI.
 ## Stack
 
 - **Runtime:** Bun
-- **Validation:** Zod
+- **Validation:** Valibot
 - **ORM:** Drizzle (SQLite / Postgres / MySQL)
 - **Lint/Format:** Biome
 

@@ -37,6 +37,35 @@ public surface moved; models, queries, validation, errors, CORS,
 `hopak use`, `hopak sync`, and `hopak check` all keep working the
 way they did.
 
+## Upgrading from 0.3.x to 0.4.0
+
+`@hopak/core@0.4.0` swaps the validation runtime from **Zod** to
+**Valibot** — ~10× smaller bundle, ~2–3× faster parse, same
+`validate()` / `buildModelSchema()` API. Code using only Hopak's
+model-driven validation keeps working untouched.
+
+**What actually changes:**
+
+- `@hopak/core` no longer depends on `zod`. If your project code
+  imported `zod` transitively, add it to your own `package.json`.
+- `RouteSchemas.body | query | params` types are now Valibot schemas
+  (`v.GenericSchema`), not `z.ZodType`. Route files that passed Zod
+  schemas directly need to switch to Valibot:
+
+  ```ts
+  // before
+  import { z } from 'zod';
+  body: z.object({ title: z.string().min(3) })
+
+  // after
+  import * as v from 'valibot';
+  body: v.object({ title: v.pipe(v.string(), v.minLength(3)) })
+  ```
+
+- Error messages use Valibot's defaults. Re-snapshot any tests that
+  assert on exact message text.
+- `ZodFieldSchema` type export renamed to `FieldSchema`.
+
 ## Quick start
 
 ```bash
@@ -2708,7 +2737,7 @@ to paste manually and exits non-zero — predictable in CI.
 ## Stack
 
 - **Runtime:** Bun
-- **Validation:** Zod
+- **Validation:** Valibot
 - **ORM:** Drizzle (SQLite / Postgres / MySQL)
 - **Lint/Format:** Biome
 

@@ -6,8 +6,8 @@ export {
   type ValidationFailure,
   type ValidationSuccess,
   type SchemaOptions,
-  type ZodFieldSchema,
-} from './zod-generator';
+  type FieldSchema,
+} from './generator';
 export {
   validateRequest,
   type RouteSchemas,

@@ -1,11 +1,11 @@
 import { ValidationError } from '@hopak/common';
-import type { z } from 'zod';
-import { validate } from './zod-generator';
+import type * as v from 'valibot';
+import { validate } from './generator';
 
 export interface RouteSchemas {
-  body?: z.ZodType;
-  query?: z.ZodType;
-  params?: z.ZodType;
+  body?: v.GenericSchema;
+  query?: v.GenericSchema;
+  params?: v.GenericSchema;
 }
 
 export interface ValidatedInput {
