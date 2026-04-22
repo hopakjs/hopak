@@ -89,6 +89,16 @@ class MysqlModelClient<TRow extends Record<string, unknown>>
   }
 
   override async upsert(options: UpsertOptions<TRow>): Promise<TRow> {
+    // The re-fetch below keys on `options.where`, so an `update` that
+    // rewrites one of those keys would find the wrong row (or nothing).
+    // Caller's bug, but worth catching early — the SQL wouldn't complain.
+    for (const key of Object.keys(options.where as Record<string, unknown>)) {
+      if (key in (options.update as Record<string, unknown>)) {
+        throw new Error(
+          `upsert: field "${key}" appears in both \`where\` and \`update\`. Pick one.`,
+        );
+      }
+    }
     const insertData = { ...options.where, ...options.create } as Partial<TRow>;
     const builder = insertValues(this.db.insert(this.table), insertData);
     if (!builder.onDuplicateKeyUpdate) {
@@ -96,7 +106,7 @@ class MysqlModelClient<TRow extends Record<string, unknown>>
     }
     const chained: InsertValuesLike = builder.onDuplicateKeyUpdate({ set: options.update });
     await chained;
-    // MySQL has no RETURNING — fetch the row by the supplied equality keys.
+    // MySQL has no RETURNING — fetch the row by the stable `where` keys.
     const found = await this.findMany({
       where: options.where as WhereClause<TRow>,
       limit: 1,

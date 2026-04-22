@@ -61,13 +61,13 @@ export async function startServer(options: StartServerOptions): Promise<Listenin
     ...(options.tls ? { tls: options.tls } : {}),
   });
 
-  if (engine.port === undefined) {
-    throw new Error('Hopak server failed to bind to a port');
-  }
+  // `engine.port` is typed `number | undefined` but always bound by the time
+  // `Bun.serve` returns (it throws on bind failure instead of returning).
+  const port = engine.port as number;
 
   return {
-    url: buildUrl(host, engine.port, Boolean(options.tls)),
-    port: engine.port,
+    url: buildUrl(host, port, Boolean(options.tls)),
+    port,
     async stop() {
       engine.stop();
     },

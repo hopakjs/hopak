@@ -1,4 +1,4 @@
-import { Unauthorized } from '@hopak/common';
+import { ConfigError, Unauthorized } from '@hopak/common';
 import type { RouteHandler } from '@hopak/core';
 import { type OAuthCallbackParams, type ProviderProfile, oauthCallback } from './common';
 import { signState } from './state';
@@ -19,7 +19,7 @@ export interface GitHubStartOptions {
 export function githubStart(options: GitHubStartOptions): RouteHandler {
   return async () => {
     const clientId = process.env.GITHUB_OAUTH_ID;
-    if (!clientId) throw new Unauthorized('GITHUB_OAUTH_ID not set');
+    if (!clientId) throw new ConfigError('GitHub OAuth is not configured on the server.');
 
     const state = await signState(options.stateSecret);
     const url = new URL(AUTHORIZE_URL);
@@ -37,7 +37,7 @@ export function githubCallback(params: OAuthCallbackParams): RouteHandler {
     const clientId = process.env.GITHUB_OAUTH_ID;
     const clientSecret = process.env.GITHUB_OAUTH_SECRET;
     if (!clientId || !clientSecret) {
-      throw new Unauthorized('GITHUB_OAUTH_ID / GITHUB_OAUTH_SECRET not set');
+      throw new ConfigError('GitHub OAuth is not configured on the server.');
     }
 
     const tokRes = await fetch(TOKEN_URL, {

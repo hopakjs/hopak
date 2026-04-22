@@ -30,16 +30,11 @@ export function parseDuration(input: string): number {
   if (!match) {
     throw new Error(`Invalid duration: ${input}. Expected formats: 100ms, 5s, 10m, 1h, 7d`);
   }
-  const amount = match[1];
-  const unit = match[2];
-  if (!amount || !unit) {
-    throw new Error(`Invalid duration: ${input}`);
-  }
-  const multiplier = DURATION_UNITS[unit.toLowerCase()];
-  if (multiplier === undefined) {
-    throw new Error(`Unknown duration unit: ${unit}`);
-  }
-  return Number(amount) * multiplier;
+  // `noUncheckedIndexedAccess` types `match[1]` as `string | undefined`
+  // despite the regex guaranteeing both groups — narrow once here.
+  const amount = match[1] as string;
+  const unit = match[2] as string;
+  return Number(amount) * (DURATION_UNITS[unit.toLowerCase()] as number);
 }
 
 export type DeepPartial<T> = T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;

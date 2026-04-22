@@ -60,7 +60,6 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
           };
       }
 
-      // 1. Install the driver (Postgres / MySQL). SQLite ships with Bun.
       if (driverPkg) {
         const installed = await installPackage(ctx, driverPkg, driverVersion);
         if (!installed.ok) {
@@ -71,7 +70,6 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
         }
       }
 
-      // 2. Write the updated config.
       await Bun.write(configPath, patch.updated);
       if (patch.status === 'replaced') {
         ctx.log.info(`Replaced database block in hopak.config.ts (${patch.previous} → ${dialect})`);
@@ -79,7 +77,6 @@ export function dbDialectHandler(options: DbDialectOptions): UseHandler {
         ctx.log.info(`Added database block to hopak.config.ts (dialect: ${dialect})`);
       }
 
-      // 3. Augment .env.example (Postgres / MySQL only).
       const envExamplePath = join(ctx.root, '.env.example');
       if (await pathExists(envExamplePath)) {
         const envSource = await Bun.file(envExamplePath).text();

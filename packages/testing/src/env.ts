@@ -14,7 +14,7 @@
  */
 import { createRequire } from 'node:module';
 
-const require_ = createRequire(import.meta.url);
+const nodeRequire = createRequire(import.meta.url);
 
 export function getPostgresUrl(): string | undefined {
   return process.env.POSTGRES_URL || undefined;
@@ -37,7 +37,7 @@ type PostgresFactory = (url: string) => PostgresSql;
  */
 export async function resetPostgres(url: string, tableNames: readonly string[]): Promise<void> {
   if (tableNames.length === 0) return;
-  const postgres = require_('postgres') as PostgresFactory | { default: PostgresFactory };
+  const postgres = nodeRequire('postgres') as PostgresFactory | { default: PostgresFactory };
   const factory: PostgresFactory = typeof postgres === 'function' ? postgres : postgres.default;
   const sql = factory(url);
   try {
@@ -63,7 +63,7 @@ interface MysqlDriver {
  */
 export async function resetMysql(url: string, tableNames: readonly string[]): Promise<void> {
   if (tableNames.length === 0) return;
-  const mysql = require_('mysql2/promise') as MysqlDriver;
+  const mysql = nodeRequire('mysql2/promise') as MysqlDriver;
   const conn = await mysql.createConnection(url);
   try {
     await conn.query('SET FOREIGN_KEY_CHECKS = 0');

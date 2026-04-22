@@ -61,9 +61,15 @@ export function jwtAuth(options: JwtAuthOptions): JwtAuth {
     return async (ctx) => {
       const bearer = ctx.headers.get('authorization')?.replace(/^Bearer /i, '');
       if (!bearer) throw new Unauthorized('missing token');
-      const { payload } = await jwtVerify(bearer, secret).catch(() => {
+      let payload: Record<string, unknown>;
+      try {
+        ({ payload } = (await jwtVerify(bearer, secret)) as { payload: Record<string, unknown> });
+      } catch (cause) {
+        ctx.log.debug('jwt verify failed', {
+          reason: cause instanceof Error ? cause.message : String(cause),
+        });
         throw new Unauthorized('invalid token');
-      });
+      }
       const user = { id: Number(payload.sub) } as AuthUser & Record<string, unknown>;
       for (const key of claims) {
         if (key === 'id') continue;
@@ -91,7 +97,10 @@ export function credentialsSignup(params: {
   const pwField = params.passwordField ?? 'password';
 
   return async (ctx) => {
-    if (!ctx.db) throw new Error('ctx.db is required for credentialsSignup');
+    if (!ctx.db)
+      throw new Error(
+        'credentialsSignup needs a database — configure `database` in hopak.config.ts.',
+      );
     const result = validate<Record<string, unknown>>(schema, await ctx.body());
     if (!result.ok) throw new ValidationError('Invalid signup', result.errors);
 
@@ -126,7 +135,10 @@ export function credentialsLogin(params: {
   const pwField = params.passwordField ?? 'password';
 
   return async (ctx) => {
-    if (!ctx.db) throw new Error('ctx.db is required for credentialsLogin');
+    if (!ctx.db)
+      throw new Error(
+        'credentialsLogin needs a database — configure `database` in hopak.config.ts.',
+      );
     const body = (await ctx.body()) as Record<string, unknown> | null;
     const identifierValue = body?.[identifier];
     const password = body?.[pwField];

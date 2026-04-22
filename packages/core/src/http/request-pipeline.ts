@@ -50,12 +50,6 @@ function methodNotAllowedResponse(allowed: readonly string[] = []): Response {
   );
 }
 
-/**
- * Run the before-chain. Each `Before`:
- *   - throw → propagates up (outer try/catch turns it into an HTTP response)
- *   - return Response → short-circuits the whole pipeline with that response
- *   - return void → continue to the next before / handler
- */
 async function runBefore(
   ctx: RequestContext,
   chain: readonly Before[],
@@ -67,11 +61,6 @@ async function runBefore(
   return undefined;
 }
 
-/**
- * Compose `Wrap`s around a core execution function. Outer wraps run
- * first on entry, last on exit (classic onion). Empty array yields
- * `core` unchanged.
- */
 function composeWraps(core: () => Promise<Response>, wraps: readonly Wrap[], ctx: RequestContext) {
   return wraps.reduceRight<() => Promise<Response>>((inner, wrap) => () => wrap(ctx, inner), core);
 }

@@ -101,14 +101,16 @@ export abstract class AbstractSqlModelClient<TRow extends Record<string, unknown
     protected readonly deps: ModelClientDeps,
     ilike: IlikeStrategy,
   ) {
+    // `table` comes through as `unknown` so the three dialects can share this
+    // class; `getTableColumns` is Drizzle's public API on dialect-agnostic
+    // Table objects. The cast here is the single boundary — everything below
+    // uses the narrowed `Record<string, AnyColumn>`.
     this.columns = getTableColumns(table as Parameters<typeof getTableColumns>[0]) as Record<
       string,
       AnyColumn
     >;
     this.translateOptions = { ilike };
   }
-
-  // -------- helpers shared by every method --------
 
   protected columnFor(field: string): AnyColumn {
     const column = this.columns[field];
@@ -157,8 +159,6 @@ export abstract class AbstractSqlModelClient<TRow extends Record<string, unknown
     // double-cast acknowledges the clause is built dynamically.
     return { [key]: { [op]: value } } as unknown as WhereClause<TRow>;
   }
-
-  // -------- read path (identical on all three dialects) --------
 
   findMany<K extends keyof TRow & string>(
     options: FindManyOptions<TRow> & { select: readonly K[] },
@@ -308,9 +308,6 @@ export abstract class AbstractSqlModelClient<TRow extends Record<string, unknown
     const rows = (await grouped) as Record<string, unknown>[];
     return plan.groupByCols ? rows.map(plan.unpack) : plan.unpack(rows[0] ?? {});
   }
-
-  // -------- write path: default = RETURNING (SQLite / Postgres) --------
-  // MySQL subclass overrides all of these to use a 2-step fetch.
 
   async create(data: Partial<TRow>): Promise<TRow> {
     return withUniqueToConflict(async () => {

@@ -75,10 +75,8 @@ async function loadOneFile(
   }
 
   if (registered === 0) {
-    // Nothing to register — treat as a plain TS module sitting in
-    // app/routes/ so sibling route files can import it. But if it
-    // exports a defineRoute() under some non-verb name, the user
-    // probably meant to make it a route, so surface that.
+    // A defineRoute() under a non-verb name is almost always a typo; silent
+    // skip for anything else (shared utils sitting in app/routes/ are fine).
     const verbs = HTTP_METHODS as readonly string[];
     for (const [name, value] of Object.entries(mod)) {
       if (name === 'default' || verbs.includes(name)) continue;

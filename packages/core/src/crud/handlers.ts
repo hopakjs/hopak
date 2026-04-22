@@ -6,23 +6,6 @@ import type { ModelDefinition } from '../model/define';
 import { serializeForResponse, serializeListForResponse } from '../serialize';
 import { buildModelSchema, validate } from '../validation';
 
-/**
- * Handler factories for the six REST verbs over a `ModelDefinition`.
- * Each factory returns a pure `RequestContext → Response` function; the
- * database handle is read off `ctx.db` at call time, not captured at
- * module load. Combined with the `crud` namespace, this lets a user's
- * generated route file register CRUD explicitly:
- *
- *   // app/routes/api/posts.ts
- *   import { crud } from '@hopak/core';
- *   import post from '../../models/post';
- *   export const GET = crud.list(post);
- *   export const POST = crud.create(post);
- *
- * The runtime never walks the model registry to "wire up" anything — the
- * route files are the single source of truth.
- */
-
 interface ListQuery {
   limit: number;
   offset: number;

@@ -32,9 +32,6 @@ export async function runNew(options: NewCommandOptions): Promise<number> {
 
   options.log.info(`Created ${options.name}`, { path: target });
 
-  // Install dependencies inline so the "next step" for the user is simply
-  // `cd <name> && hopak dev`. Opt out with `--no-install` for CI / tests /
-  // offline setups.
   if (!options.noInstall) {
     const installed = await runBunInstall(target, options.log);
     if (!installed) {

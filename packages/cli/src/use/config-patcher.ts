@@ -116,8 +116,6 @@ function collectTopLevelKeys(inner: string): string[] | null {
   const keys: string[] = [];
   let depth = 0;
   let i = 0;
-  // Iterate character by character, collecting identifiers that appear at
-  // depth 0 immediately before a `:`.
   while (i < inner.length) {
     const ch = inner[i];
     if (ch === '{' || ch === '[' || ch === '(') {
@@ -131,7 +129,6 @@ function collectTopLevelKeys(inner: string): string[] | null {
       continue;
     }
     if (ch === "'" || ch === '"' || ch === '`') {
-      // Skip strings (including escaped chars).
       const quote = ch;
       i++;
       while (i < inner.length && inner[i] !== quote) {
@@ -144,7 +141,6 @@ function collectTopLevelKeys(inner: string): string[] | null {
     if (depth === 0 && /[A-Za-z_$]/.test(ch as string)) {
       const start = i;
       while (i < inner.length && /[A-Za-z0-9_$]/.test(inner[i] as string)) i++;
-      // Skip whitespace to see whether this identifier is followed by `:`.
       let j = i;
       while (j < inner.length && /\s/.test(inner[j] as string)) j++;
       if (inner[j] === ':') {

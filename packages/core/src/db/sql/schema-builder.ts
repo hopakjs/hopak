@@ -63,6 +63,10 @@ function applyModifiers<TColumn>(
   nowSql: SQL,
   supportsInlineUnique: boolean,
 ): TColumn {
+  // Drizzle's column builders are invariant under their generic parameters
+  // (one concrete class per dialect × column type), so there's no structural
+  // supertype we could hand back to the caller. The two casts bracket the
+  // shared chain — same shape on every dialect, different exact type.
   let chain = column as unknown as ColumnChain;
   if (field.required) chain = chain.notNull();
   if (field.unique && supportsInlineUnique) chain = chain.unique();

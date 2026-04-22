@@ -1,4 +1,4 @@
-import { Unauthorized } from '@hopak/common';
+import { ConfigError, Unauthorized } from '@hopak/common';
 import type { RouteHandler } from '@hopak/core';
 import { type OAuthCallbackParams, type ProviderProfile, oauthCallback } from './common';
 import { signState } from './state';
@@ -16,7 +16,7 @@ export interface GoogleStartOptions {
 export function googleStart(options: GoogleStartOptions): RouteHandler {
   return async () => {
     const clientId = process.env.GOOGLE_OAUTH_ID;
-    if (!clientId) throw new Unauthorized('GOOGLE_OAUTH_ID not set');
+    if (!clientId) throw new ConfigError('Google OAuth is not configured on the server.');
 
     const state = await signState(options.stateSecret);
     const url = new URL(AUTHORIZE_URL);
@@ -37,7 +37,7 @@ export function googleCallback(
     const clientId = process.env.GOOGLE_OAUTH_ID;
     const clientSecret = process.env.GOOGLE_OAUTH_SECRET;
     if (!clientId || !clientSecret) {
-      throw new Unauthorized('GOOGLE_OAUTH_ID / GOOGLE_OAUTH_SECRET not set');
+      throw new ConfigError('Google OAuth is not configured on the server.');
     }
 
     const body = new URLSearchParams({

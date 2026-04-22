@@ -81,11 +81,8 @@ class SqliteDatabase implements Database {
   }
 
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
-    const stmt = this.inner.bun.prepare(sql);
-    // bun:sqlite accepts string/number/bigint/boolean/null/Uint8Array bindings;
-    // callers at the `Database` interface pass `unknown` and SQLite coerces.
     type Binding = string | number | bigint | boolean | null | Uint8Array;
-    stmt.run(...(params as Binding[]));
+    this.inner.bun.prepare(sql).run(...(params as Binding[]));
   }
 
   async close(): Promise<void> {

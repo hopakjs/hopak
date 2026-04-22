@@ -33,8 +33,8 @@ export interface MiddlewareInjection {
 }
 
 const HOPAK_IMPORT_RE = /import\s*\{([^}]*)\}\s*from\s*['"]@hopak\/core['"]\s*;?/;
-// Chain step: `.name(` + balanced args + `)`. One level of nested parens is
-// enough for `.before(requestId())`, `.after(requestLog({ ... }))`.
+// Matches one level of nested parens — enough for `.after(requestLog({ ... }))`
+// but bails on deeper structures.
 const CHAIN_STEP = /\.[a-zA-Z]+\s*\((?:[^()]|\([^()]*\))*\)/.source;
 const HOPAK_CALL_RE = new RegExp(`hopak\\s*\\(\\s*\\)((?:\\s*${CHAIN_STEP})*)\\s*\\.listen\\s*\\(`);
 const STEP_SIGNATURE_RE = /^\.([a-zA-Z]+)\s*\(\s*([a-zA-Z_$][\w$]*)/;

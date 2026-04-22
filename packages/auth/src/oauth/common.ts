@@ -53,7 +53,8 @@ export function oauthCallback(
   const linkBy = params.linkBy ?? 'email';
 
   return async (ctx) => {
-    if (!ctx.db) throw new Error('ctx.db is required for oauthCallback');
+    if (!ctx.db)
+      throw new Error('oauthCallback needs a database — configure `database` in hopak.config.ts.');
     const code = ctx.query.get('code');
     const state = ctx.query.get('state');
     if (!code || !state) throw new Unauthorized('missing code or state');
