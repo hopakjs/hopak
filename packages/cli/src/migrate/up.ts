@@ -10,7 +10,7 @@ export interface UpOptions {
 
 export async function runUp(options: UpOptions): Promise<number> {
   const cwd = options.cwd ?? process.cwd();
-  const app = await createApp({ rootDir: cwd, log: options.log });
+  const app = await createApp({ rootDir: cwd, log: options.log, skipRoutes: true });
   const { migrations, errors } = await loadMigrations(app.config.paths.migrations);
   for (const err of errors) options.log.error(err.message, { file: err.file });
   if (errors.length > 0) {

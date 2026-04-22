@@ -30,6 +30,14 @@ export interface CreateAppOptions {
   log?: Logger;
   /** Global middleware — accumulated via `hopak().before/after/wrap()`. */
   middleware?: Middleware;
+  /**
+   * Skip loading route files from `app/routes/`. Intended for CLI subcommands
+   * that only need models + db (e.g. `hopak migrate *`, `hopak sync`) — route
+   * files often import from `app/middleware/*` which may throw at module load
+   * without env vars, and those errors distract from what the subcommand is
+   * actually doing.
+   */
+  skipRoutes?: boolean;
 }
 
 export interface HopakApp {
@@ -168,7 +176,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
   const registry = await discoverModels(config, log);
   await ensureWritableDirs(config);
   const db = await connectDatabase(config, registry, log);
-  const router = await buildRouter(config, log);
+  const router = options.skipRoutes ? new Router() : await buildRouter(config, log);
 
   let server: ListeningServer | undefined;
 

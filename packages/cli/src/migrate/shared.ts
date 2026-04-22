@@ -20,7 +20,7 @@ export interface Context {
  * mode, alt config) live in one place.
  */
 export async function openApp(options: BootOptions): Promise<Context> {
-  const app = await createApp({ rootDir: options.cwd, log: options.log });
+  const app = await createApp({ rootDir: options.cwd, log: options.log, skipRoutes: true });
   const migrationsDir = app.config.paths.migrations;
   return { app, migrationsDir };
 }

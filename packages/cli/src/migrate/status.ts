@@ -8,7 +8,7 @@ export interface StatusOptions {
 
 export async function runStatus(options: StatusOptions): Promise<number> {
   const cwd = options.cwd ?? process.cwd();
-  const app = await createApp({ rootDir: cwd, log: options.log });
+  const app = await createApp({ rootDir: cwd, log: options.log, skipRoutes: true });
   const { migrations, errors } = await loadMigrations(app.config.paths.migrations);
   for (const err of errors) options.log.warn(err.message, { file: err.file });
 

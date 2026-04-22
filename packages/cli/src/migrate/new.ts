@@ -24,11 +24,18 @@ export async function runNew(options: NewOptions): Promise<number> {
     return 1;
   }
 
-  const app = await createApp({ rootDir: cwd, log: options.log });
+  let id: string;
+  try {
+    id = newMigrationId(name);
+  } catch (err) {
+    options.log.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  }
+
+  const app = await createApp({ rootDir: cwd, log: options.log, skipRoutes: true });
   const dir = app.config.paths.migrations;
   await ensureMigrationsDir(dir);
 
-  const id = newMigrationId(name);
   const target = migrationFilePath(dir, id);
   if (await pathExists(target)) {
     options.log.error(`Migration file already exists: ${target}`);

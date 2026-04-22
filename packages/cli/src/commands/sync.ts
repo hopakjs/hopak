@@ -25,7 +25,7 @@ export async function runSync(options: SyncOptions): Promise<number> {
   }
 
   log.info('Syncing schema to database', { cwd });
-  const app = await createApp({ rootDir: cwd, log });
+  const app = await createApp({ rootDir: cwd, log, skipRoutes: true });
   log.info('Schema synchronized', {
     models: app.registry.size,
     dialect: app.config.database.dialect,
