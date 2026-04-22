@@ -30,10 +30,9 @@ export function parseDuration(input: string): number {
   if (!match) {
     throw new Error(`Invalid duration: ${input}. Expected formats: 100ms, 5s, 10m, 1h, 7d`);
   }
-  // `noUncheckedIndexedAccess` types `match[1]` as `string | undefined`
-  // despite the regex guaranteeing both groups — narrow once here.
-  const amount = match[1] as string;
-  const unit = match[2] as string;
+  // Groups are guaranteed by the pattern; `noUncheckedIndexedAccess` forces
+  // the tuple cast, and the same holds for the unit lookup.
+  const [, amount, unit] = match as unknown as [string, string, string];
   return Number(amount) * (DURATION_UNITS[unit.toLowerCase()] as number);
 }
 

@@ -67,6 +67,9 @@ async function createRootDirServer(options: TestServerOptions): Promise<TestServ
     client: createJsonClient(server.url),
     server,
     requireDb() {
+      if (!app.db) {
+        throw new Error('TestServer booted from rootDir has no database — check hopak.config.ts.');
+      }
       return app.db;
     },
     async stop() {
