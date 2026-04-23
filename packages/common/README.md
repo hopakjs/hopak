@@ -7,29 +7,15 @@
 [![npm](https://img.shields.io/npm/v/@hopak/common.svg)](https://www.npmjs.com/package/@hopak/common)
 [![license](https://img.shields.io/npm/l/@hopak/common.svg)](https://github.com/hopakjs/hopak/blob/main/LICENSE)
 
-Shared primitives for [Hopak.js](https://hopak.dev) — the error hierarchy, logger, HTTP status codes, filesystem helpers, small utilities, and the config type system used by every other `@hopak/*` package.
+Shared primitives for [Hopak.js](https://hopak.dev) — errors, logger, HTTP statuses, config types.
 
-> Application code usually does not depend on this directly. `@hopak/core` already depends on it and re-exports the public surface (errors, logger, `HttpStatus`). Install this package only when building a plug-in or extension that cannot go through core.
-
-## Install
+> `@hopak/core` already depends on this and re-exports the public surface. Install directly only when building a Hopak plug-in.
 
 ```bash
 bun add @hopak/common
 ```
 
-Requires Bun ≥ 1.3.
-
-## Documentation
-
-Full API on the site:
-
-**👉 [hopak.dev/docs/packages/common](https://hopak.dev/docs/packages/common)**
-
-- Error hierarchy and `HopakError` shape
-- `Logger` interface, `ConsoleLogger`, child loggers
-- `HttpStatus` constants
-- Filesystem helpers, slug/plural/duration/deep-merge utilities
-- Config types (`HopakConfig`, `DatabaseOptions`, `CorsOptions`, …)
+**📖 Docs: [hopak.dev/docs/packages/common](https://hopak.dev/docs/packages/common)**
 
 ## Author
 
