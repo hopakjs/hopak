@@ -19,13 +19,13 @@ export interface ServerOptions {
 }
 
 export interface HttpsOptions {
-  /** Enable HTTPS listener. When true, a self-signed cert is auto-generated unless `cert`+`key` are provided. */
+  /** Enable HTTPS listener. Requires a dev cert at `.hopak/certs/dev.{key,crt}` — run `hopak generate cert` once to create it. Boot fails fast with a pointer if the cert is missing. */
   enabled: boolean;
   /** HTTPS port (default 3443). */
   port?: number;
-  /** Path to an existing PEM-encoded certificate. Leave empty to auto-generate a dev cert. */
+  /** Path to a PEM-encoded certificate. Defaults to `.hopak/certs/dev.crt`. */
   cert?: string;
-  /** Path to an existing PEM-encoded private key. Leave empty to auto-generate a dev cert. */
+  /** Path to a PEM-encoded private key. Defaults to `.hopak/certs/dev.key`. */
   key?: string;
 }
 

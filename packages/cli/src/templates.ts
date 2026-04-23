@@ -104,7 +104,8 @@ export function projectTemplate(
 //   hopak use postgres
 //   hopak use mysql
 //
-// Enable HTTPS in dev — a self-signed cert is generated on first boot:
+// Enable HTTPS in dev — run \`hopak generate cert\` once to create
+// .hopak/certs/dev.{key,crt}, then:
 //   server: { https: { enabled: true, port: 3443 } },
 
 export default defineConfig({
