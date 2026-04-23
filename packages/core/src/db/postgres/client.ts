@@ -11,6 +11,7 @@ import {
   type SqlRunner,
 } from '../sql/abstract-client';
 import { ilikeNative } from '../sql/filter-translator';
+import { compileTag } from '../sql/tag';
 import { type PostgresSql, loadDrizzleAdapter, loadPostgresDriver } from './driver-loader';
 import { buildPostgresSchema } from './schema';
 import { syncPostgresSchema } from './sync';
@@ -70,8 +71,34 @@ class PostgresDatabase implements Database {
     return client;
   }
 
-  raw(): PostgresJsDatabase {
+  builder(): PostgresJsDatabase {
     return this.inner.drizzleDb;
+  }
+
+  async sql<T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<readonly T[]> {
+    const { text, bindings } = compileTag(strings, values, 'numbered');
+    if (this.inner.sql) {
+      // Non-tx: native postgres.js path. `sql.unsafe` returns a Result
+      // that's array-like (iterable) with rows or empty for writes.
+      const result = await this.inner.sql.unsafe(text, bindings as unknown[]);
+      return Array.from(result as Iterable<T>);
+    }
+    // Tx-view fallback — native postgres.js sql isn't reachable through
+    // Drizzle's tx handle, so raw SQL in a transaction defers to Drizzle's
+    // own `sql` template for placeholder synthesis ($N for postgres-js).
+    // Peer-dep pinning covers the shape-stability assumption.
+    const stmt = drizzleSql(strings, ...values);
+    const result = await this.inner.drizzleDb.execute(stmt);
+    if (Array.isArray(result)) return result as T[];
+    const rows = (result as { rows?: unknown[] }).rows;
+    if (Array.isArray(rows)) return rows as T[];
+    if (typeof (result as { [Symbol.iterator]?: unknown })[Symbol.iterator] === 'function') {
+      return Array.from(result as Iterable<T>);
+    }
+    return [];
   }
 
   async sync(): Promise<void> {
@@ -81,6 +108,7 @@ class PostgresDatabase implements Database {
     await syncPostgresSchema(this.inner.sql, this.inner.models);
   }
 
+  /** @deprecated Use `db.sql\`...\`` — see db/client.ts. Forwarder kept for 0.5.0. */
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
     if (this.inner.sql) {
       await this.inner.sql.unsafe(sql, params as unknown[]);

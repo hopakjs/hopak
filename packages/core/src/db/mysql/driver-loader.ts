@@ -12,7 +12,8 @@ import type { MySql2Database } from 'drizzle-orm/mysql2';
 
 export interface MysqlPool {
   query(sql: string): Promise<unknown>;
-  execute(sql: string, params?: unknown[]): Promise<unknown>;
+  // mysql2 promise-mode `execute` always yields `[rows | header, fields]`.
+  execute(sql: string, params?: unknown[]): Promise<readonly [unknown, unknown]>;
   end(): Promise<void>;
 }
 

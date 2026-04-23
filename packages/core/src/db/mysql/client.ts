@@ -28,6 +28,7 @@ import {
 } from '../sql/drizzle-bridge';
 import { withUniqueToConflict } from '../sql/error-translator';
 import { ilikeAsLike } from '../sql/filter-translator';
+import { compileTag } from '../sql/tag';
 import { type MysqlPool, loadDrizzleMysqlAdapter, loadMysqlDriver } from './driver-loader';
 import { buildMysqlSchema } from './schema';
 import { syncMysqlSchema } from './sync';
@@ -35,6 +36,10 @@ import { syncMysqlSchema } from './sync';
 export interface MysqlOptions {
   models: readonly ModelDefinition[];
   url?: string;
+}
+
+function isResultSetHeader(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && 'affectedRows' in value;
 }
 
 /**
@@ -181,8 +186,36 @@ class MysqlDatabase implements Database {
     return client;
   }
 
-  raw(): MySql2Database {
+  builder(): MySql2Database {
     return this.inner.drizzleDb;
+  }
+
+  async sql<T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<readonly T[]> {
+    const { text, bindings } = compileTag(strings, values, 'question');
+    if (this.inner.pool) {
+      // Non-tx: native mysql2 path. `pool.execute` returns
+      // `[rows | ResultSetHeader, fields]` — rows for SELECT, header
+      // (with `affectedRows`, not an array) for writes.
+      const [res] = await this.inner.pool.execute(text, bindings as unknown[]);
+      return (Array.isArray(res) ? res : []) as T[];
+    }
+    // Tx-view fallback — native mysql2 connection isn't reachable through
+    // Drizzle's tx handle, so raw SQL in a transaction defers to Drizzle's
+    // own `sql` template for placeholder synthesis (? for mysql2). Peer-dep
+    // pinning covers the shape-stability assumption.
+    const stmt = drizzleSql(strings, ...values);
+    const result = await this.inner.drizzleDb.execute(stmt);
+    if (Array.isArray(result)) {
+      const first = result[0];
+      if (Array.isArray(first)) return first as T[];
+      if (isResultSetHeader(first)) return [];
+      return result as unknown as T[];
+    }
+    const rows = (result as { rows?: unknown[] }).rows;
+    return (Array.isArray(rows) ? rows : []) as T[];
   }
 
   async sync(): Promise<void> {
@@ -192,6 +225,7 @@ class MysqlDatabase implements Database {
     await syncMysqlSchema(this.inner.pool, this.inner.models);
   }
 
+  /** @deprecated Use `db.sql\`...\`` — see db/client.ts. Forwarder kept for 0.5.0. */
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
     if (this.inner.pool) {
       await this.inner.pool.execute(sql, params as unknown[]);

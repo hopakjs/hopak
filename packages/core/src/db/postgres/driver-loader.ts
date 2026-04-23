@@ -14,7 +14,9 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 export type PostgresFactory = (url: string, options?: Record<string, unknown>) => PostgresSql;
 
 export interface PostgresSql {
-  unsafe(query: string, params?: readonly unknown[]): Promise<unknown>;
+  // postgres.js's `unsafe` resolves to a `Result` that extends Array and
+  // is iterable — typed here as the minimum we rely on.
+  unsafe(query: string, params?: readonly unknown[]): Promise<Iterable<unknown>>;
   end(options?: { timeout?: number }): Promise<void>;
 }
 

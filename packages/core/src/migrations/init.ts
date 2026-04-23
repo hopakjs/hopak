@@ -39,7 +39,7 @@ export function renderInitMigration(models: readonly ModelDefinition[]): string 
   const drops = [...ordered]
     .reverse()
     .map((m) => pluralize(m.name))
-    .map((t) => `  await ctx.execute(\`DROP TABLE IF EXISTS ${quoteForAll(t)}\`);`)
+    .map((t) => `  await ctx.sql\`DROP TABLE IF EXISTS ${quoteForAll(t)}\`;`)
     .join('\n');
 
   const upBody = [
@@ -81,7 +81,7 @@ function buildIndexesFor(model: ModelDefinition, dialect: DbDialect): readonly s
 
 function indentStatements(stmts: readonly string[], spaces: number): string {
   const pad = ' '.repeat(spaces);
-  return stmts.map((s) => `${pad}await ctx.execute(\`${s.replace(/`/g, '\\`')}\`);`).join('\n');
+  return stmts.map((s) => `${pad}await ctx.sql\`${s.replace(/`/g, '\\`')}\`;`).join('\n');
 }
 
 /** For `DROP TABLE IF EXISTS X` — any dialect accepts unquoted unless the name has special chars. */

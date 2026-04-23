@@ -188,15 +188,39 @@ export interface Database {
   model<TRow extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
   ): ModelClient<TRow>;
-  raw(): unknown;
+  /**
+   * Tagged-template SQL for the ~5% of queries that don't fit `.model()`:
+   * window functions, recursive CTEs, vendor-specific JSON / FTS,
+   * `EXPLAIN ANALYZE`. Interpolations become driver-native placeholders
+   * (`?` for SQLite / MySQL, `$N` for Postgres); values are never inlined
+   * into the SQL text, so `sql\`SELECT * FROM post WHERE id = ${id}\`` is
+   * safe — injection through `${...}` is fundamentally impossible.
+   *
+   * Reads return the row array typed as `T`. Writes (INSERT / UPDATE /
+   * DELETE / DDL) return an empty array — use the return value only for
+   * SELECTs.
+   */
+  sql<T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<readonly T[]>;
+  /**
+   * Escape hatch to the dialect's Drizzle client for the <1% of cases where
+   * even `.sql` isn't enough (query-builder composition, Drizzle plugins,
+   * advanced features). The return type is deliberately `unknown` — cast
+   * to the dialect you're using. Renamed from `raw()` in 0.5.0.
+   */
+  builder(): unknown;
   sync(): Promise<void>;
   close(): Promise<void>;
   /**
+   * @deprecated Use `db.sql\`...\`` instead. `execute` stays in 0.5.0 as a
+   * thin forwarder so existing migration files keep compiling; it will be
+   * removed in 0.6.0. New code should prefer the tagged template.
+   *
    * Run a parameterised SQL statement directly against the connection.
    * Dialect-specific — the caller is responsible for portable syntax.
-   * Intended for migrations (`ALTER TABLE …`) and introspection
-   * (`PRAGMA` / `information_schema`). No result rows are returned;
-   * for selects use `.model(...)` or `raw()`.
+   * No result rows are returned.
    */
   execute(sql: string, params?: readonly unknown[]): Promise<void>;
   /**

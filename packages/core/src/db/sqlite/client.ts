@@ -10,8 +10,11 @@ import {
   type SqlRunner,
 } from '../sql/abstract-client';
 import { ilikeAsLike } from '../sql/filter-translator';
+import { compileTag } from '../sql/tag';
 import { buildSqliteSchema } from './schema';
 import { syncSqliteSchema } from './sync';
+
+type BunBinding = string | number | bigint | boolean | null | Uint8Array;
 
 export interface SqliteOptions {
   models: readonly ModelDefinition[];
@@ -69,8 +72,19 @@ class SqliteDatabase implements Database {
     return client;
   }
 
-  raw(): BunSQLiteDatabase {
+  builder(): BunSQLiteDatabase {
     return this.inner.drizzleDb;
+  }
+
+  async sql<T = Record<string, unknown>>(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<readonly T[]> {
+    const { text, bindings } = compileTag(strings, values, 'question');
+    // `bun:sqlite.all` returns rows for SELECT and an empty array for
+    // writes — a stable contract outside Drizzle's shape variance. The
+    // same handle is shared inside a tx-view, so this works under BEGIN.
+    return this.inner.bun.prepare(text).all(...(bindings as BunBinding[])) as T[];
   }
 
   async sync(): Promise<void> {
@@ -80,6 +94,7 @@ class SqliteDatabase implements Database {
     await syncSqliteSchema(this.inner.bun, this.inner.models);
   }
 
+  /** @deprecated Use `db.sql\`...\`` — see db/client.ts. Forwarder kept for 0.5.0. */
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
     type Binding = string | number | bigint | boolean | null | Uint8Array;
     this.inner.bun.prepare(sql).run(...(params as Binding[]));
@@ -94,7 +109,7 @@ class SqliteDatabase implements Database {
    * using Drizzle's `.transaction(fn)` (sync callback only), the user's async
    * callback is wrapped in raw `BEGIN` / `COMMIT` / `ROLLBACK` statements and
    * the single connection is shared with the tx view. Nested transactions
-   * aren't supported in 0.1.0 — SAVEPOINTs are accessible via `raw()`.
+   * aren't supported in 0.1.0 — SAVEPOINTs are accessible via `builder()`.
    */
   async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
     if (this.inner.isTxView) {

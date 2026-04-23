@@ -49,7 +49,7 @@ afterEach(async () => {
 
 async function tableExists(name: string): Promise<boolean> {
   const { sql } = await import('drizzle-orm');
-  const rows = (db.raw() as { all: (s: unknown) => unknown[] }).all(
+  const rows = (db.builder() as { all: (s: unknown) => unknown[] }).all(
     sql.raw(`SELECT name FROM sqlite_master WHERE type='table' AND name='${name}'`),
   ) as Array<{ name: string }>;
   return rows.length === 1;

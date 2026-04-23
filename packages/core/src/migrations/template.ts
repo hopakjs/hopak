@@ -8,7 +8,7 @@ export interface TemplateOptions {
   readonly downBody?: string;
 }
 
-const DEFAULT_UP = `  // TODO: await ctx.execute('ALTER TABLE ...');`;
+const DEFAULT_UP = '  // TODO: await ctx.sql`ALTER TABLE ...`;';
 const DEFAULT_DOWN = '  // TODO: reverse of up()';
 
 export function renderMigrationTemplate(options: TemplateOptions = {}): string {

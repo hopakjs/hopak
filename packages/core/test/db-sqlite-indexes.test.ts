@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 function listIndexes(name: string): string[] {
-  const drizzle = db.raw() as BunSQLiteDatabase;
+  const drizzle = db.builder() as BunSQLiteDatabase;
   const rows = drizzle.all(
     sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ${name}`,
   ) as Array<{ name: string }>;
