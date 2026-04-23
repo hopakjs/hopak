@@ -42,15 +42,24 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+// Keys that would otherwise let untrusted input rewrite an object's
+// prototype chain when merged via `[]=`. Blocked unconditionally — config
+// never legitimately carries these names.
+const UNSAFE_MERGE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Recursively merges `source` into `target`, returning a new value of type `T`.
  * Only plain objects are merged; arrays and primitives in `source` replace the
  * corresponding value in `target`. `undefined` values in `source` are ignored.
+ *
+ * `__proto__`, `constructor`, and `prototype` keys are dropped on the way in
+ * so JSON-parsed user input cannot swap the merged object's prototype.
  */
 export function deepMerge<T>(target: T, source: DeepPartial<T> | undefined): T {
   if (!isPlainObject(target) || !isPlainObject(source)) return target;
   const result: Record<string, unknown> = { ...target };
   for (const [key, value] of Object.entries(source)) {
+    if (UNSAFE_MERGE_KEYS.has(key)) continue;
     const existing = result[key];
     if (isPlainObject(existing) && isPlainObject(value)) {
       result[key] = deepMerge(existing, value);
