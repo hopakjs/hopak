@@ -63,7 +63,12 @@ export function jwtAuth(options: JwtAuthOptions): JwtAuth {
       if (!bearer) throw new Unauthorized('missing token');
       let payload: Record<string, unknown>;
       try {
-        ({ payload } = (await jwtVerify(bearer, secret)) as { payload: Record<string, unknown> });
+        // Pin algorithms so a forged token can't trick jose into verifying
+        // with something we didn't configure (e.g. `alg: "none"` or a
+        // family swap). jose rejects unlisted algs outright.
+        ({ payload } = (await jwtVerify(bearer, secret, { algorithms: [alg] })) as {
+          payload: Record<string, unknown>;
+        });
       } catch (cause) {
         ctx.log.debug('jwt verify failed', {
           reason: cause instanceof Error ? cause.message : String(cause),

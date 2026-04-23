@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type InferFieldValue,
   belongsTo,
+  buildFieldSchema,
   date,
   enumOf,
   file,
@@ -13,6 +14,7 @@ import {
   secret,
   timestamp,
   token,
+  validate,
 } from '../src';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
@@ -132,5 +134,35 @@ describe('file / image', () => {
 
   test('throws on invalid size', () => {
     expect(() => file().maxSize('5XB')).toThrow(/Invalid file size/);
+  });
+
+  test('maxSize rejects oversized uploads at validation time', () => {
+    const fileDef = file().required().maxSize('1MB').build();
+    const schema = buildFieldSchema(fileDef);
+    if (!schema) throw new Error('expected a schema');
+    const tooBig = validate(schema, {
+      url: 'u',
+      mimeType: 'image/png',
+      size: 2 * 1024 * 1024,
+    });
+    expect(tooBig.ok).toBe(false);
+    const underLimit = validate(schema, {
+      url: 'u',
+      mimeType: 'image/png',
+      size: 100,
+    });
+    expect(underLimit.ok).toBe(true);
+  });
+
+  test('without maxSize any size passes', () => {
+    const fileDef = file().required().build();
+    const schema = buildFieldSchema(fileDef);
+    if (!schema) throw new Error('expected a schema');
+    const huge = validate(schema, {
+      url: 'u',
+      mimeType: 'image/png',
+      size: 10 ** 10,
+    });
+    expect(huge.ok).toBe(true);
   });
 });

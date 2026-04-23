@@ -67,13 +67,29 @@ const numberSchema: SchemaFactory = (field) => {
   return actions.length === 0 ? v.number() : pipe<number>(v.number(), ...actions);
 };
 
-const fileSchema: SchemaFactory = () =>
-  v.object({
-    url: v.string(),
-    mimeType: v.string(),
-    size: v.number(),
-    name: v.optional(v.string()),
-  });
+const fileMetaSchema = v.object({
+  url: v.string(),
+  mimeType: v.string(),
+  size: v.number(),
+  name: v.optional(v.string()),
+});
+
+type FileMetaOutput = v.InferOutput<typeof fileMetaSchema>;
+
+const fileSchema: SchemaFactory = (field) => {
+  // Respect `.maxSize(...)` declared on file()/image() fields.
+  if (field.max !== undefined) {
+    const limit = field.max;
+    return v.pipe(
+      fileMetaSchema,
+      v.check(
+        (m: FileMetaOutput) => m.size <= limit,
+        `File exceeds maximum size of ${limit} bytes`,
+      ),
+    );
+  }
+  return fileMetaSchema;
+};
 
 // `new Date("not-a-date")` returns an Invalid Date object, so a plain
 // coerce-to-Date path silently passes junk strings. Accept ISO strings,

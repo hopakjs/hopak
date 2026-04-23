@@ -112,4 +112,20 @@ describe('requireAuth', () => {
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(signup.body.user.id);
   });
+
+  test('rejects token signed with a different algorithm', async () => {
+    // Build a token with HS384 while the server is pinned to HS256.
+    // jose should refuse it outright instead of happily verifying.
+    const { SignJWT } = await import('jose');
+    const otherAlg = await new SignJWT({ role: 'admin' })
+      .setProtectedHeader({ alg: 'HS384' })
+      .setSubject('999')
+      .setIssuedAt()
+      .setExpirationTime('7d')
+      .sign(new TextEncoder().encode(SECRET));
+    const res = await env.client.get('/me', {
+      headers: { authorization: `Bearer ${otherAlg}` },
+    });
+    expect(res.status).toBe(401);
+  });
 });

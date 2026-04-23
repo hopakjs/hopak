@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { file as bunFile } from 'bun';
 
@@ -29,15 +30,36 @@ function buildEtag(size: number, mtimeMs: number): string {
 }
 
 export function createStaticHandler(options: StaticOptions): StaticHandler {
-  const root = resolve(options.publicDir);
+  const resolved = resolve(options.publicDir);
+  // Eagerly realpath the root so symlink comparisons later line up —
+  // e.g. on macOS `/var/...` actually lives under `/private/var/...`,
+  // which would trip `isPathSafe` after `realpath(target)`.
+  let rootPromise: Promise<string> | null = null;
+  const canonicalRoot = async (): Promise<string> => {
+    if (!rootPromise) {
+      rootPromise = realpath(resolved).catch(() => resolved);
+    }
+    return rootPromise;
+  };
 
   return {
     async serve(url) {
+      const root = await canonicalRoot();
       const target = resolveTarget(root, url.pathname);
       if (!isPathSafe(root, target)) return null;
 
       const file = bunFile(target);
       if (!(await file.exists())) return null;
+
+      // Resolve symlinks on the request path too. A symlink inside
+      // `root` pointing outside would otherwise leak arbitrary files.
+      let realTarget: string;
+      try {
+        realTarget = await realpath(target);
+      } catch {
+        return null;
+      }
+      if (!isPathSafe(root, realTarget)) return null;
 
       const size = file.size;
       const mtimeMs = file.lastModified;
