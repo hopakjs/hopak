@@ -42,4 +42,4 @@ Pull requests welcome. For substantial changes, open an issue first. The repo is
 
 ## License
 
-[MIT](./LICENSE) — Volodymyr Press and contributors.
+[MIT](./LICENSE) — Volodymyr Press.
