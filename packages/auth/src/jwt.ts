@@ -128,6 +128,18 @@ export function credentialsSignup(params: {
  *   - verifies the password with Bun.password.verify
  *   - returns `{ token }` — the token claims come from `sign`
  */
+let fallbackHashPromise: Promise<string> | undefined;
+
+// Verified against when no user (or no hash) matches, so a login attempt
+// costs one hash verification whether the account exists or not — the
+// uniform "bad credentials" message stays uniform in timing too.
+function fallbackHash(): Promise<string> {
+  fallbackHashPromise ??= Bun.password.hash(
+    Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex'),
+  );
+  return fallbackHashPromise;
+}
+
 export function credentialsLogin(params: {
   model: ModelDefinition;
   sign: (user: Record<string, unknown>) => Promise<string>;
@@ -156,10 +168,10 @@ export function credentialsLogin(params: {
       limit: 1,
     });
     const user = rows[0];
-    if (!user) throw new Unauthorized('bad credentials');
-
-    const hashed = user[pwField];
-    if (typeof hashed !== 'string' || !(await Bun.password.verify(password, hashed))) {
+    const hashed = user?.[pwField];
+    const candidate = typeof hashed === 'string' ? hashed : await fallbackHash();
+    const verified = await Bun.password.verify(password, candidate);
+    if (!user || typeof hashed !== 'string' || !verified) {
       throw new Unauthorized('bad credentials');
     }
 

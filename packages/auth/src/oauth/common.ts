@@ -1,5 +1,6 @@
 import { Unauthorized } from '@hopak/common';
 import type { ModelDefinition, RouteHandler } from '@hopak/core';
+import { clearVerifierCookie, readVerifierCookie } from './pkce';
 import { verifyState } from './state';
 
 /**
@@ -15,7 +16,16 @@ export interface ProviderProfile {
 
 export interface OAuthCallbackParams {
   model: ModelDefinition;
+  /** Absolute URL of this callback route — must match the one passed to the start handler. */
+  callbackUrl: string;
   sign: (user: Record<string, unknown>) => Promise<string>;
+  /**
+   * Verify the PKCE code verifier set by the start handler. Default
+   * matches the start handler's default for the provider. When enabled,
+   * the callback requires the verifier cookie and forwards it in the
+   * token exchange.
+   */
+  pkce?: boolean;
   /**
    * Field on the model used to match the provider profile. Default
    * `'email'` — provider's email maps to the local user's email.
@@ -48,9 +58,12 @@ export interface OAuthCallbackParams {
  */
 export function oauthCallback(
   params: OAuthCallbackParams,
-  exchangeAndFetch: (code: string) => Promise<ProviderProfile>,
+  exchangeAndFetch: (code: string, verifier?: string) => Promise<ProviderProfile>,
+  defaults: { pkce: boolean } = { pkce: false },
 ): RouteHandler {
   const linkBy = params.linkBy ?? 'email';
+  const pkce = params.pkce ?? defaults.pkce;
+  const secure = params.callbackUrl.startsWith('https://');
 
   return async (ctx) => {
     if (!ctx.db)
@@ -60,7 +73,14 @@ export function oauthCallback(
     if (!code || !state) throw new Unauthorized('missing code or state');
     await verifyState(params.stateSecret, state);
 
-    const profile = await exchangeAndFetch(code);
+    let verifier: string | undefined;
+    if (pkce) {
+      verifier = readVerifierCookie(ctx.headers.get('cookie'));
+      if (!verifier) throw new Unauthorized('missing pkce verifier');
+      ctx.setHeader('Set-Cookie', clearVerifierCookie(secure));
+    }
+
+    const profile = await exchangeAndFetch(code, verifier);
     const key = linkBy === 'providerId' ? profile.providerId : profile.email;
 
     const users = ctx.db.model(params.model.name);

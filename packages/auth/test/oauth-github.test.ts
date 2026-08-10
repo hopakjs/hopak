@@ -55,6 +55,7 @@ async function bootstrap(): Promise<void> {
     defineRoute({
       handler: githubCallback({
         model: user,
+        callbackUrl: CALLBACK,
         stateSecret: SECRET,
         sign: async () => 'signed-jwt',
       }),
