@@ -1,16 +1,33 @@
 import type { Logger } from '@hopak/common';
+import { createLogger } from '@hopak/common';
 import {
   type Database,
   type HopakApp,
+  type HopakPlugin,
   type ListeningServer,
   type Middleware,
   type ModelDefinition,
   Router,
   createApp,
   createDatabase,
+  defaultConfig,
+  setupPlugins,
   startServer,
 } from '@hopak/core';
 import { type JsonClient, createJsonClient } from './json-client';
+
+function mergeMiddleware(
+  plugin: Middleware | undefined,
+  user: Middleware | undefined,
+): Middleware | undefined {
+  if (!plugin) return user;
+  if (!user) return plugin;
+  return {
+    before: [...plugin.before, ...user.before],
+    after: [...plugin.after, ...user.after],
+    wrap: [...plugin.wrap, ...user.wrap],
+  };
+}
 
 export interface TestServerOptions {
   /**
@@ -26,6 +43,12 @@ export interface TestServerOptions {
    */
   models?: readonly ModelDefinition[];
   router?: Router;
+  /**
+   * Plugins the app under test registers via `hopak().use()`. Required
+   * whenever a model uses a plugin-provided field type — the registry is
+   * populated during plugin setup, before models are scanned.
+   */
+  plugins?: readonly HopakPlugin[];
   /** Global middleware (before/after/wrap) applied to every request. */
   middleware?: Middleware;
   /** Override the logger — useful for capturing output in tests. */
@@ -58,7 +81,11 @@ async function createRootDirServer(options: TestServerOptions): Promise<TestServ
       '`rootDir` is mutually exclusive with `router` / `models`. Point the test server at a project root, or assemble the router in-memory — not both.',
     );
   }
-  const app: HopakApp = await createApp({ rootDir: options.rootDir });
+  const app: HopakApp = await createApp({
+    rootDir: options.rootDir,
+    ...(options.plugins ? { plugins: options.plugins } : {}),
+    ...(options.log ? { log: options.log } : {}),
+  });
   const server = await app.listen(0);
   return {
     url: server.url,
@@ -80,14 +107,29 @@ async function createRootDirServer(options: TestServerOptions): Promise<TestServ
 
 async function createInMemoryServer(options: TestServerOptions): Promise<TestServer> {
   const router = options.router ?? new Router();
+
+  // Field types a plugin registers must exist before the schema is built.
+  let pluginMiddleware: Middleware | undefined;
+  if (options.plugins?.length) {
+    const runtime = await setupPlugins(
+      options.plugins,
+      defaultConfig(process.cwd()),
+      options.log ?? createLogger({ level: 'error' }),
+    );
+    for (const hook of runtime.bootHooks) await hook();
+    pluginMiddleware = runtime.middleware;
+  }
+
   const db = options.models ? createDatabase({ dialect: 'sqlite', models: options.models }) : null;
   if (db) await db.sync();
+
+  const middleware = mergeMiddleware(pluginMiddleware, options.middleware);
 
   const server = await startServer({
     port: 0,
     router,
     ...(db ? { db } : {}),
-    ...(options.middleware ? { middleware: options.middleware } : {}),
+    ...(middleware ? { middleware } : {}),
     ...(options.log ? { log: options.log } : {}),
     ...(options.staticDir !== undefined ? { staticDir: options.staticDir } : {}),
     ...(options.exposeStack !== undefined ? { exposeStack: options.exposeStack } : {}),
