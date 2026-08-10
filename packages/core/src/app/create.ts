@@ -18,6 +18,7 @@ import { EMPTY_MIDDLEWARE, type Middleware } from '../http/middleware';
 import { Router } from '../http/router';
 import { type ListeningServer, startServer } from '../http/server';
 import { ModelRegistry } from '../model/registry';
+import { type HopakPlugin, setupPlugins } from '../plugin';
 import { Scanner } from '../scanner';
 import { applyConfig, loadConfigFile } from './config';
 
@@ -30,6 +31,8 @@ export interface CreateAppOptions {
   log?: Logger;
   /** Global middleware — accumulated via `hopak().before/after/wrap()`. */
   middleware?: Middleware;
+  /** Plugins — accumulated via `hopak().use()`. Setup runs before models are scanned. */
+  plugins?: readonly HopakPlugin[];
   /**
    * Skip loading route files from `app/routes/`. Intended for CLI subcommands
    * that only need models + db (e.g. `hopak migrate *`, `hopak sync`) — route
@@ -172,10 +175,22 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
   const log = options.log ?? createLogger({ level: config.logLevel });
   log.debug('Loaded config', { rootDir, logLevel: config.logLevel });
 
+  const pluginRuntime = await setupPlugins(options.plugins ?? [], config, log);
+
   const registry = await discoverModels(config, log);
   await ensureWritableDirs(config);
   const db = await connectDatabase(config, registry, log);
+  for (const hook of pluginRuntime.bootHooks) await hook();
   const router = options.skipRoutes ? new Router() : await buildRouter(config, log);
+
+  // Plugin middleware registered during setup runs ahead of middleware
+  // added via hopak().before/after/wrap() — plugins are framework-level.
+  const userMiddleware = options.middleware ?? EMPTY_MIDDLEWARE;
+  const middleware: Middleware = {
+    before: [...pluginRuntime.middleware.before, ...userMiddleware.before],
+    after: [...pluginRuntime.middleware.after, ...userMiddleware.after],
+    wrap: [...pluginRuntime.middleware.wrap, ...userMiddleware.wrap],
+  };
 
   let server: ListeningServer | undefined;
 
@@ -195,7 +210,10 @@ export async function createApp(options: CreateAppOptions = {}): Promise<HopakAp
         staticDir: config.paths.public,
         log,
         db,
-        middleware: options.middleware ?? EMPTY_MIDDLEWARE,
+        middleware,
+        ...(config.server.maxRequestBodyBytes !== undefined
+          ? { maxRequestBodyBytes: config.server.maxRequestBodyBytes }
+          : {}),
         ...(config.cors ? { cors: config.cors } : {}),
         ...(tls ? { tls } : {}),
       });

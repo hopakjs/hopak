@@ -1,6 +1,7 @@
 import type { Logger } from '@hopak/common';
 import type { Database } from '../db/client';
 import type { After, Before, Wrap } from './middleware';
+import type { WsHandlers } from './websocket';
 
 export const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -24,13 +25,27 @@ export interface RequestContext {
   setStatus(code: number): void;
 }
 
-export type RouteHandler = (ctx: RequestContext) => unknown | Promise<unknown>;
+export type RouteHandler<TResult = unknown> = (ctx: RequestContext) => TResult | Promise<TResult>;
 
-export interface RouteDefinition {
-  readonly handler: RouteHandler;
+/**
+ * Attached by `crud.*` builders (and available to hand-written routes) so
+ * the OpenAPI generator can emit typed request/response schemas instead
+ * of generic objects.
+ */
+export interface RouteOpenApiMeta {
+  readonly model?: string;
+  readonly kind?: 'list' | 'read' | 'create' | 'update' | 'patch' | 'remove';
+  readonly summary?: string;
+}
+
+export interface RouteDefinition<TResult = unknown> {
+  readonly handler: RouteHandler<TResult>;
   readonly before?: readonly Before[];
   readonly after?: readonly After[];
   readonly wrap?: readonly Wrap[];
+  readonly openapi?: RouteOpenApiMeta;
+  /** WebSocket handlers — set by the loader when a route file exports `WS`. */
+  readonly ws?: WsHandlers;
 }
 
 export type RouteSegment =

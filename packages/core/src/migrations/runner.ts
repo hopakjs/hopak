@@ -47,8 +47,18 @@ export async function applyUp(
   const appliedIds = new Set(applied.map((a) => a.id));
 
   const pending = migrations.filter((m) => !appliedIds.has(m.id));
-  const targetIndex = to ? pending.findIndex((m) => m.id === to) : pending.length - 1;
-  const slice = targetIndex >= 0 ? pending.slice(0, targetIndex + 1) : pending;
+  let slice = pending;
+  if (to) {
+    const targetIndex = pending.findIndex((m) => m.id === to);
+    if (targetIndex === -1) {
+      throw new Error(
+        appliedIds.has(to)
+          ? `Migration ${to} is already applied — nothing to do.`
+          : `Unknown migration id '${to}'. Run \`hopak migrate status\` to list pending migrations.`,
+      );
+    }
+    slice = pending.slice(0, targetIndex + 1);
+  }
 
   const ran: string[] = [];
   for (const migration of slice) {

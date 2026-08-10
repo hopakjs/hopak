@@ -90,7 +90,7 @@ export interface FindManyOptions<TRow = Record<string, unknown>> {
    * Cursor-based (keyset) pagination. Pass the value of the cursor column
    * from the last seen row; returns rows strictly after it. The cursor key
    * must appear in `orderBy` — the direction there decides `>` vs `<`.
-   * Single-column cursors only in 0.1.0; multi-column keyset requires
+   * Single-column cursors only for now; multi-column keyset requires
    * tuple-comparison syntax that isn't uniform across dialects.
    */
   cursor?: { [K in keyof TRow]?: TRow[K] };
@@ -161,6 +161,21 @@ export interface FindOneOptions {
   lock?: 'forUpdate' | 'forShare';
 }
 
+/**
+ * Row type for `findMany({ include })` results. Relation fields hold FK
+ * values in the base row type, but an `include` replaces them with the
+ * related row (belongsTo / hasOne) or an array of rows (hasMany):
+ *
+ *   type PostWithAuthor = WithIncluded<Post, { author: User }>;
+ *   const rows = await db.model<PostWithAuthor>('post')
+ *     .findMany({ include: { author: true } });
+ */
+export type WithIncluded<TRow, TRelations extends Record<string, unknown>> = Omit<
+  TRow,
+  keyof TRelations
+> &
+  TRelations;
+
 export interface ModelClient<TRow = Record<string, unknown>> {
   /** Column-projection overload. Invoked when `select` is present. */
   findMany<K extends keyof TRow & string>(
@@ -184,7 +199,7 @@ export interface ModelClient<TRow = Record<string, unknown>> {
   aggregate(options: AggregateOptions<TRow>): Promise<AggregateResult>;
 }
 
-export interface Database {
+export interface Database<TBuilder = unknown> {
   model<TRow extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
   ): ModelClient<TRow>;
@@ -207,22 +222,13 @@ export interface Database {
   /**
    * Escape hatch to the dialect's Drizzle client for the <1% of cases where
    * even `.sql` isn't enough (query-builder composition, Drizzle plugins,
-   * advanced features). The return type is deliberately `unknown` — cast
-   * to the dialect you're using. Renamed from `raw()` in 0.5.0.
+   * advanced features). Typed when the database was created through a
+   * dialect factory (`createSqliteDatabase` etc.); `unknown` behind the
+   * dialect-agnostic `createDatabase` — cast to the dialect you're using.
    */
-  builder(): unknown;
+  builder(): TBuilder;
   sync(): Promise<void>;
   close(): Promise<void>;
-  /**
-   * @deprecated Use `db.sql\`...\`` instead. `execute` stays in 0.5.0 as a
-   * thin forwarder so existing migration files keep compiling; it will be
-   * removed in 0.6.0. New code should prefer the tagged template.
-   *
-   * Run a parameterised SQL statement directly against the connection.
-   * Dialect-specific — the caller is responsible for portable syntax.
-   * No result rows are returned.
-   */
-  execute(sql: string, params?: readonly unknown[]): Promise<void>;
   /**
    * Run `fn` inside a database transaction. Commits when `fn` resolves,
    * rolls back if `fn` (or any query inside) throws. The `tx` argument is a
@@ -231,8 +237,8 @@ export interface Database {
    * the transaction.
    *
    * Nested transactions (calling `tx.transaction(...)` inside another
-   * transaction) are not supported in 0.1.0. Calling `tx.sync()` is also
+   * transaction) are not supported. Calling `tx.sync()` is also
    * an error — run migrations before entering a transaction.
    */
-  transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T>;
+  transaction<T>(fn: (tx: Database<TBuilder>) => Promise<T>): Promise<T>;
 }

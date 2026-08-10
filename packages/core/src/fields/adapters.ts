@@ -1,3 +1,4 @@
+import { PluginError } from '@hopak/common';
 import type { MySqlColumnBuilderBase } from 'drizzle-orm/mysql-core';
 import {
   boolean as mysqlBoolean,
@@ -163,7 +164,7 @@ const virtualAdapter: FieldAdapter = {
   virtual: true,
 };
 
-const ADAPTERS: Record<FieldType, FieldAdapter> = {
+const BUILT_IN_ADAPTERS: Record<FieldType, FieldAdapter> = {
   text: stringText,
   phone: stringText,
   password: stringText,
@@ -210,12 +211,46 @@ const ADAPTERS: Record<FieldType, FieldAdapter> = {
   hasOne: virtualAdapter,
 };
 
-export function adapterFor(type: FieldType): FieldAdapter {
-  const adapter = ADAPTERS[type];
-  if (!adapter) {
-    throw new Error(`No adapter registered for field type: ${type}`);
+interface RegisteredAdapter {
+  readonly adapter: FieldAdapter;
+  readonly owner: string;
+}
+
+const CORE_OWNER = '@hopak/core';
+const REGISTRY = new Map<string, RegisteredAdapter>();
+
+/**
+ * Register a field adapter under a type name. Built-ins register through
+ * this same path at module init, so plugins and core share one registry.
+ * Re-registering the same type by the same owner is a no-op (a plugin's
+ * `setup` runs once per app boot, and tests boot many apps in one
+ * process); a different owner claiming a taken type throws.
+ */
+export function registerFieldAdapter(
+  type: string,
+  adapter: FieldAdapter,
+  owner: string = CORE_OWNER,
+): void {
+  const existing = REGISTRY.get(type);
+  if (existing) {
+    if (existing.owner === owner) return;
+    throw new PluginError(`Field '${type}' is already registered by ${existing.owner}`);
   }
-  return adapter;
+  REGISTRY.set(type, { adapter, owner });
+}
+
+for (const [type, adapter] of Object.entries(BUILT_IN_ADAPTERS)) {
+  registerFieldAdapter(type, adapter);
+}
+
+export function adapterFor(type: string): FieldAdapter {
+  const entry = REGISTRY.get(type);
+  if (!entry) {
+    throw new Error(
+      `No adapter registered for field type '${type}'. Built-in types: ${Object.keys(BUILT_IN_ADAPTERS).join(', ')}. Custom types come from plugins — make sure the plugin is passed to hopak().use().`,
+    );
+  }
+  return entry.adapter;
 }
 
 export function columnNameFor(fieldName: string, field: FieldDefinition): string {

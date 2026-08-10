@@ -4,6 +4,7 @@ import type { PgTable } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { ModelDefinition } from '../../model/define';
 import type { Database, ModelClient } from '../client';
+import { withModelHooks } from '../hooks';
 import type { ResolveClient } from '../include-executor';
 import {
   AbstractSqlModelClient,
@@ -44,7 +45,7 @@ interface PostgresInternal {
   models: readonly ModelDefinition[];
 }
 
-class PostgresDatabase implements Database {
+class PostgresDatabase implements Database<PostgresJsDatabase> {
   private readonly clients = new Map<string, ModelClient<Record<string, unknown>>>();
 
   constructor(private readonly inner: PostgresInternal) {}
@@ -67,8 +68,9 @@ class PostgresDatabase implements Database {
       allModels: this.inner.models,
       resolveClient,
     });
-    this.clients.set(name, client as ModelClient<Record<string, unknown>>);
-    return client;
+    const hooked = withModelHooks(client, modelDef);
+    this.clients.set(name, hooked as ModelClient<Record<string, unknown>>);
+    return hooked;
   }
 
   builder(): PostgresJsDatabase {
@@ -108,7 +110,7 @@ class PostgresDatabase implements Database {
     await syncPostgresSchema(this.inner.sql, this.inner.models);
   }
 
-  /** @deprecated Use `db.sql\`...\`` — see db/client.ts. Forwarder kept for 0.5.0. */
+  /** Statement runner for MigrationContext — dynamic DDL the sql tag refuses. */
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
     if (this.inner.sql) {
       await this.inner.sql.unsafe(sql, params as unknown[]);
@@ -126,9 +128,9 @@ class PostgresDatabase implements Database {
     if (this.inner.sql) await this.inner.sql.end({ timeout: 5 });
   }
 
-  async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+  async transaction<T>(fn: (tx: Database<PostgresJsDatabase>) => Promise<T>): Promise<T> {
     if (!this.inner.sql) {
-      throw new Error('Nested transactions are not supported in 0.1.0');
+      throw new Error('Nested transactions are not supported. Use SAVEPOINT via builder().');
     }
     return this.inner.drizzleDb.transaction(async (tx) => {
       const txDb = new PostgresDatabase({
@@ -142,7 +144,7 @@ class PostgresDatabase implements Database {
   }
 }
 
-export function createPostgresDatabase(options: PostgresOptions): Database {
+export function createPostgresDatabase(options: PostgresOptions): Database<PostgresJsDatabase> {
   if (!options.url) {
     throw new ConfigError(
       'Postgres dialect requires a connection URL. Set database.url in hopak.config.ts or DATABASE_URL env.',

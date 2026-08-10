@@ -66,7 +66,7 @@ export function buildContext(inputs: ContextInputs): ContextResult {
     ip: inputs.ip,
     log: inputs.log,
     db: inputs.db,
-    startedAt: Date.now(),
+    startedAt: performance.now(),
     body() {
       bodyPromise ??= parseJsonBody();
       return bodyPromise;

@@ -281,11 +281,10 @@ describe('hopak() fluent builder', () => {
     const app = hopak();
     const server = await app.listen(0);
     try {
-      expect(() => app.before(() => {})).toThrow(/cannot register middleware after listen/);
-      expect(() => app.after(() => {})).toThrow(/cannot register middleware after listen/);
-      expect(() => app.wrap(async (_c, run) => run())).toThrow(
-        /cannot register middleware after listen/,
-      );
+      expect(() => app.before(() => {})).toThrow(/cannot register after listen/);
+      expect(() => app.after(() => {})).toThrow(/cannot register after listen/);
+      expect(() => app.wrap(async (_c, run) => run())).toThrow(/cannot register after listen/);
+      expect(() => app.use({ name: 'late', setup() {} })).toThrow(/cannot register after listen/);
     } finally {
       await server.stop();
     }

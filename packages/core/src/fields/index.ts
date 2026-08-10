@@ -1,10 +1,12 @@
 export {
   FieldBuilder,
+  type AnyFieldType,
   type FieldDefinition,
   type FieldType,
   type InferFieldValue,
   type InferFields,
 } from './base';
+export { type FieldAdapter, adapterFor, columnNameFor, isVirtual } from './adapters';
 export {
   StringField,
   SecretField,

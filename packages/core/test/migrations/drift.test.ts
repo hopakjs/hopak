@@ -18,7 +18,7 @@ afterEach(async () => {
 
 describe('detectDrift', () => {
   test('flags columns declared on the model but missing in the table', async () => {
-    await db.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)');
+    await db.sql`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`;
     const userModel = model('user', {
       name: text().required(),
       email: text().required(),
@@ -37,7 +37,7 @@ describe('detectDrift', () => {
   });
 
   test('no drift when every field has a matching column', async () => {
-    await db.execute('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)');
+    await db.sql`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)`;
     const m = model('user', { name: text().required(), email: text().required() });
     const drift = await detectDrift(db, 'sqlite', [m]);
     expect(drift).toHaveLength(0);

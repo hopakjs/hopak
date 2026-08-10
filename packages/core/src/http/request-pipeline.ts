@@ -116,7 +116,7 @@ export function createRequestHandler(options: PipelineOptions) {
   const decorate = (req: Request, response: Response): Response =>
     cors ? cors.apply(req, response) : response;
 
-  return async function handle(req: Request, engine: Engine): Promise<Response> {
+  return async function handle(req: Request, engine: Engine): Promise<Response | undefined> {
     if (cors) {
       const preflight = cors.preflight(req);
       if (preflight) return preflight;
@@ -128,47 +128,69 @@ export function createRequestHandler(options: PipelineOptions) {
     const url = new URL(req.url);
     const match = router.match(method, url.pathname);
 
-    if (!match) {
-      if (STATIC_METHODS.has(method) && staticHandler) {
-        const staticResponse = await staticHandler.serve(url);
-        if (staticResponse) return decorate(req, staticResponse);
-      }
-      const allowed = router.allowedMethods(url.pathname);
-      if (allowed.length > 0) return decorate(req, methodNotAllowedResponse(allowed));
-      return decorate(req, notFoundResponse(method, url.pathname));
-    }
-
     const ip = clientIp(req, engine);
     const { ctx, responseInit } = buildContext({
       req,
       url,
       method,
-      params: match.params,
+      params: match?.params ?? {},
       log,
       ip,
       db,
     });
 
-    const chains = mergeChains(globals, match.route.definition);
+    // Unmatched requests (static files, 404, 405) flow through the same
+    // middleware chains as routed ones, so global auth / rate limiting /
+    // request logging see every request, not just the ones with a route.
+    const chains = mergeChains(globals, match?.route.definition ?? {});
 
     let response: Response;
     let error: unknown;
+    let upgraded = false;
 
     try {
       const core = async (): Promise<Response> => {
         const short = await runBefore(ctx, chains.before);
         if (short) return short;
-        const result = await match.route.definition.handler(ctx);
-        return toResponse(result, responseInit);
+        if (match) {
+          // WS upgrade sits after the before-chain so global auth / rate
+          // limiting gate WebSocket connections like any other request.
+          const ws = match.route.definition.ws;
+          if (ws && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
+            const ok = engine.upgrade(req, {
+              data: { params: match.params, query: url.searchParams, handlers: ws },
+            });
+            if (ok) {
+              upgraded = true;
+              return new Response(null, { status: HttpStatus.Ok });
+            }
+          }
+          const result = await match.route.definition.handler(ctx);
+          return toResponse(result, responseInit);
+        }
+        if (STATIC_METHODS.has(method) && staticHandler) {
+          const staticResponse = await staticHandler.serve(url, req);
+          if (staticResponse) return staticResponse;
+        }
+        const allowed = router.allowedMethods(url.pathname);
+        if (allowed.length > 0) return methodNotAllowedResponse(allowed);
+        return notFoundResponse(method, url.pathname);
       };
       const execute = composeWraps(core, chains.wrap, ctx);
       response = await execute();
     } catch (cause) {
       error = cause;
       response = handleError(cause, { log, exposeStack });
+      // Headers set through ctx.setHeader (X-Request-Id, Retry-After, ...)
+      // belong on error responses too.
+      for (const [name, value] of responseInit.headers) {
+        if (!response.headers.has(name)) response.headers.set(name, value);
+      }
     }
 
     await runAfter(ctx, chains.after, { response, error }, log);
+    // Bun's contract: return nothing for a request that was upgraded.
+    if (upgraded) return undefined;
     return decorate(req, response);
   };
 }

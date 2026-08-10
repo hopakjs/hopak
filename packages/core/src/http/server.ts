@@ -6,6 +6,7 @@ import { EMPTY_MIDDLEWARE, type Middleware } from './middleware';
 import { createRequestHandler } from './request-pipeline';
 import { Router } from './router';
 import { createStaticHandler } from './static';
+import type { HopakWebSocket } from './websocket';
 
 export interface StartServerOptions {
   port?: number;
@@ -19,7 +20,10 @@ export interface StartServerOptions {
   db?: Database;
   exposeStack?: boolean;
   tls?: { key: string; cert: string };
+  maxRequestBodyBytes?: number;
 }
+
+const DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 export interface ListeningServer {
   readonly url: string;
@@ -58,6 +62,23 @@ export async function startServer(options: StartServerOptions): Promise<Listenin
     port: options.port ?? DEFAULT_PORT,
     hostname: host,
     fetch: handler,
+    maxRequestBodySize: options.maxRequestBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    // One server-level listener dispatches to the handlers attached per
+    // connection at upgrade time (see request-pipeline).
+    websocket: {
+      open(ws: HopakWebSocket) {
+        void ws.data.handlers.open?.(ws);
+      },
+      message(ws: HopakWebSocket, message: string | Uint8Array) {
+        void ws.data.handlers.message?.(ws, message);
+      },
+      close(ws: HopakWebSocket, code: number, reason: string) {
+        void ws.data.handlers.close?.(ws, code, reason);
+      },
+      drain(ws: HopakWebSocket) {
+        void ws.data.handlers.drain?.(ws);
+      },
+    },
     ...(options.tls ? { tls: options.tls } : {}),
   });
 

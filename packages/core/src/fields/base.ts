@@ -19,8 +19,16 @@ export type FieldType =
   | 'file'
   | 'image';
 
+/**
+ * Built-in types are a closed union for exhaustive handling inside core;
+ * plugins register additional types as plain strings via
+ * `PluginContext.registerField`, so the definition carries the widened
+ * form. The `string & {}` trick keeps literal autocomplete working.
+ */
+export type AnyFieldType = FieldType | (string & {});
+
 export interface FieldDefinition {
-  type: FieldType;
+  type: AnyFieldType;
   required: boolean;
   unique?: boolean;
   index?: boolean;
@@ -39,7 +47,7 @@ export abstract class FieldBuilder<TValue, TRequired extends boolean = false> {
 
   protected readonly def: FieldDefinition;
 
-  constructor(type: FieldType, init?: Partial<FieldDefinition>) {
+  constructor(type: AnyFieldType, init?: Partial<FieldDefinition>) {
     this.def = { type, required: false, ...init };
   }
 

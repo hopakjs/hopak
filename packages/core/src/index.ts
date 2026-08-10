@@ -10,6 +10,12 @@ export * from './app';
 export * from './db';
 export * from './migrations';
 export { hopak, type HopakInstance } from './hopak';
+export type { HopakPlugin, PluginContext } from './plugin';
+export {
+  buildOpenApiSpec,
+  type BuildOpenApiOptions,
+  type OpenApiInfo,
+} from './openapi';
 export { defineConfig } from './config';
 export { buildBanner, type BannerInputs } from './banner';
 export { HOPAK_VERSION } from './version';

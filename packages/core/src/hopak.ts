@@ -3,6 +3,7 @@ import { type CreateAppOptions, type HopakApp, createApp } from './app/create';
 import { buildBanner } from './banner';
 import type { After, Before, Wrap } from './http/middleware';
 import type { ListeningServer } from './http/server';
+import type { HopakPlugin } from './plugin';
 
 /**
  * Fluent entry point for starting a Hopak app. Chainable
@@ -14,6 +15,7 @@ import type { ListeningServer } from './http/server';
  * mid-flight.
  */
 export interface HopakInstance {
+  use(...plugins: HopakPlugin[]): HopakInstance;
   before(...fns: Before[]): HopakInstance;
   after(...fns: After[]): HopakInstance;
   wrap(...fns: Wrap[]): HopakInstance;
@@ -26,13 +28,14 @@ export function hopak(options: CreateAppOptions = {}): HopakInstance {
   const before: Before[] = [];
   const after: After[] = [];
   const wrap: Wrap[] = [];
+  const plugins: HopakPlugin[] = [];
   let appPromise: Promise<HopakApp> | undefined;
   let started = false;
 
-  const refuseAfterStart = (hook: 'before' | 'after' | 'wrap') => {
+  const refuseAfterStart = (hook: 'use' | 'before' | 'after' | 'wrap') => {
     if (started) {
       throw new Error(
-        `hopak().${hook}(): cannot register middleware after listen() — add it before starting the server.`,
+        `hopak().${hook}(): cannot register after listen() — add it before starting the server.`,
       );
     }
   };
@@ -42,12 +45,18 @@ export function hopak(options: CreateAppOptions = {}): HopakInstance {
       appPromise = createApp({
         ...options,
         middleware: { before, after, wrap },
+        plugins,
       });
     }
     return appPromise;
   };
 
   const instance: HopakInstance = {
+    use(...items) {
+      refuseAfterStart('use');
+      plugins.push(...items);
+      return instance;
+    },
     before(...fns) {
       refuseAfterStart('before');
       before.push(...fns);

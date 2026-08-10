@@ -24,9 +24,9 @@ export interface MigrationContext {
     ...values: unknown[]
   ): Promise<readonly T[]>;
   /**
-   * @deprecated Use `ctx.sql\`...\`` — see migrations/types.ts. The forwarder
-   * stays in 0.5.0 so existing migration files keep compiling; it will be
-   * removed in 0.6.0.
+   * Run one statement of dynamic SQL text — DDL assembled at runtime,
+   * which the `sql` tag deliberately refuses to interpolate. Prefer
+   * `ctx.sql\`...\`` whenever the statement is static.
    */
   execute(sql: string, params?: readonly unknown[]): Promise<void>;
 }

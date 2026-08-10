@@ -13,6 +13,7 @@ import type {
   UpsertOptions,
   WhereClause,
 } from '../client';
+import { withModelHooks } from '../hooks';
 import type { ResolveClient } from '../include-executor';
 import {
   AbstractSqlModelClient,
@@ -159,7 +160,7 @@ interface MysqlInternal {
   models: readonly ModelDefinition[];
 }
 
-class MysqlDatabase implements Database {
+class MysqlDatabase implements Database<MySql2Database> {
   private readonly clients = new Map<string, ModelClient<Record<string, unknown>>>();
 
   constructor(private readonly inner: MysqlInternal) {}
@@ -182,8 +183,9 @@ class MysqlDatabase implements Database {
       allModels: this.inner.models,
       resolveClient,
     });
-    this.clients.set(name, client as ModelClient<Record<string, unknown>>);
-    return client;
+    const hooked = withModelHooks(client, modelDef);
+    this.clients.set(name, hooked as ModelClient<Record<string, unknown>>);
+    return hooked;
   }
 
   builder(): MySql2Database {
@@ -225,7 +227,7 @@ class MysqlDatabase implements Database {
     await syncMysqlSchema(this.inner.pool, this.inner.models);
   }
 
-  /** @deprecated Use `db.sql\`...\`` — see db/client.ts. Forwarder kept for 0.5.0. */
+  /** Statement runner for MigrationContext — dynamic DDL the sql tag refuses. */
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
     if (this.inner.pool) {
       await this.inner.pool.execute(sql, params as unknown[]);
@@ -243,9 +245,9 @@ class MysqlDatabase implements Database {
     if (this.inner.pool) await this.inner.pool.end();
   }
 
-  async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+  async transaction<T>(fn: (tx: Database<MySql2Database>) => Promise<T>): Promise<T> {
     if (!this.inner.pool) {
-      throw new Error('Nested transactions are not supported in 0.1.0');
+      throw new Error('Nested transactions are not supported. Use SAVEPOINT via builder().');
     }
     return this.inner.drizzleDb.transaction(async (tx) => {
       const txDb = new MysqlDatabase({
@@ -259,7 +261,7 @@ class MysqlDatabase implements Database {
   }
 }
 
-export function createMysqlDatabase(options: MysqlOptions): Database {
+export function createMysqlDatabase(options: MysqlOptions): Database<MySql2Database> {
   if (!options.url) {
     throw new ConfigError(
       'MySQL dialect requires a connection URL. Set database.url in hopak.config.ts or DATABASE_URL env.',

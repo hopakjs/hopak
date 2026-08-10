@@ -16,13 +16,22 @@ const MAX_LIMIT = 100;
 const MIN_LIMIT = 1;
 const MIN_OFFSET = 0;
 
+function parsePageParam(query: URLSearchParams, name: string, fallback: number): number {
+  const raw = query.get(name);
+  if (raw === null || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value)) {
+    throw new ValidationError(`Invalid ${name}: expected an integer, got '${raw}'`);
+  }
+  return value;
+}
+
 function parseListQuery(query: URLSearchParams): ListQuery {
-  const rawLimit = query.get('limit');
-  const rawOffset = query.get('offset');
-  const limit = rawLimit
-    ? Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, Number(rawLimit)))
-    : DEFAULT_LIMIT;
-  const offset = rawOffset ? Math.max(MIN_OFFSET, Number(rawOffset)) : MIN_OFFSET;
+  const limit = Math.max(
+    MIN_LIMIT,
+    Math.min(MAX_LIMIT, parsePageParam(query, 'limit', DEFAULT_LIMIT)),
+  );
+  const offset = Math.max(MIN_OFFSET, parsePageParam(query, 'offset', MIN_OFFSET));
   return { limit, offset };
 }
 

@@ -3,6 +3,7 @@ import { type BunSQLiteDatabase, drizzle } from 'drizzle-orm/bun-sqlite';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import type { ModelDefinition } from '../../model/define';
 import type { Database, ModelClient } from '../client';
+import { withModelHooks } from '../hooks';
 import type { ResolveClient } from '../include-executor';
 import {
   AbstractSqlModelClient,
@@ -45,8 +46,9 @@ interface SqliteInternal {
   isTxView: boolean;
 }
 
-class SqliteDatabase implements Database {
+class SqliteDatabase implements Database<BunSQLiteDatabase> {
   private readonly clients = new Map<string, ModelClient<Record<string, unknown>>>();
+  private txQueue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly inner: SqliteInternal) {}
 
@@ -68,8 +70,9 @@ class SqliteDatabase implements Database {
       allModels: this.inner.models,
       resolveClient,
     });
-    this.clients.set(name, client as ModelClient<Record<string, unknown>>);
-    return client;
+    const hooked = withModelHooks(client, modelDef);
+    this.clients.set(name, hooked as ModelClient<Record<string, unknown>>);
+    return hooked;
   }
 
   builder(): BunSQLiteDatabase {
@@ -94,7 +97,7 @@ class SqliteDatabase implements Database {
     await syncSqliteSchema(this.inner.bun, this.inner.models);
   }
 
-  /** @deprecated Use `db.sql\`...\`` — see db/client.ts. Forwarder kept for 0.5.0. */
+  /** Statement runner for MigrationContext — dynamic DDL the sql tag refuses. */
   async execute(sql: string, params: readonly unknown[] = []): Promise<void> {
     type Binding = string | number | bigint | boolean | null | Uint8Array;
     this.inner.bun.prepare(sql).run(...(params as Binding[]));
@@ -108,34 +111,41 @@ class SqliteDatabase implements Database {
    * bun:sqlite transactions are sync-only at the driver level, so instead of
    * using Drizzle's `.transaction(fn)` (sync callback only), the user's async
    * callback is wrapped in raw `BEGIN` / `COMMIT` / `ROLLBACK` statements and
-   * the single connection is shared with the tx view. Nested transactions
-   * aren't supported in 0.1.0 — SAVEPOINTs are accessible via `builder()`.
+   * the single connection is shared with the tx view. Concurrent transactions
+   * are queued: the shared connection allows only one open tx, so each waits
+   * for the previous to settle. Nested transactions aren't supported —
+   * SAVEPOINTs are accessible via `builder()`.
    */
-  async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+  async transaction<T>(fn: (tx: Database<BunSQLiteDatabase>) => Promise<T>): Promise<T> {
     if (this.inner.isTxView) {
-      throw new Error('Nested transactions are not supported in 0.1.0');
+      throw new Error('Nested transactions are not supported. Use SAVEPOINT via builder().');
     }
-    const bun = this.inner.bun;
-    const txDb = new SqliteDatabase({
-      bun,
-      drizzleDb: this.inner.drizzleDb,
-      tables: this.inner.tables,
-      models: this.inner.models,
-      isTxView: true,
-    });
-    bun.run('BEGIN');
-    try {
-      const result = await fn(txDb);
-      bun.run('COMMIT');
-      return result;
-    } catch (err) {
-      bun.run('ROLLBACK');
-      throw err;
-    }
+    const run = async (): Promise<T> => {
+      const bun = this.inner.bun;
+      const txDb = new SqliteDatabase({
+        bun,
+        drizzleDb: this.inner.drizzleDb,
+        tables: this.inner.tables,
+        models: this.inner.models,
+        isTxView: true,
+      });
+      bun.run('BEGIN');
+      try {
+        const result = await fn(txDb);
+        bun.run('COMMIT');
+        return result;
+      } catch (err) {
+        bun.run('ROLLBACK');
+        throw err;
+      }
+    };
+    const result = this.txQueue.then(run);
+    this.txQueue = result.catch(() => undefined);
+    return result;
   }
 }
 
-export function createSqliteDatabase(options: SqliteOptions): Database {
+export function createSqliteDatabase(options: SqliteOptions): Database<BunSQLiteDatabase> {
   const bun = new BunDatabase(options.file ?? ':memory:');
   const drizzleDb = drizzle(bun);
   const schema = buildSqliteSchema(options.models);

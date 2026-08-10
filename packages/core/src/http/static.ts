@@ -7,7 +7,7 @@ export interface StaticOptions {
 }
 
 export interface StaticHandler {
-  serve(url: URL): Promise<Response | null>;
+  serve(url: URL, req?: Request): Promise<Response | null>;
 }
 
 const INDEX_FILE = '/index.html';
@@ -29,6 +29,22 @@ function buildEtag(size: number, mtimeMs: number): string {
   return `W/"${size.toString(16)}-${mtimeMs.toString(16)}"`;
 }
 
+// If-None-Match wins over If-Modified-Since per RFC 9110 §13.1.3.
+function isNotModified(req: Request, etag: string, mtimeMs: number): boolean {
+  const ifNoneMatch = req.headers.get('if-none-match');
+  if (ifNoneMatch) {
+    return ifNoneMatch
+      .split(',')
+      .map((candidate) => candidate.trim())
+      .some((candidate) => candidate === etag || candidate === '*');
+  }
+  const ifModifiedSince = req.headers.get('if-modified-since');
+  if (!ifModifiedSince) return false;
+  const since = Date.parse(ifModifiedSince);
+  if (Number.isNaN(since)) return false;
+  return Math.floor(mtimeMs / 1000) * 1000 <= since;
+}
+
 export function createStaticHandler(options: StaticOptions): StaticHandler {
   const resolved = resolve(options.publicDir);
   // Eagerly realpath the root so symlink comparisons later line up —
@@ -43,7 +59,7 @@ export function createStaticHandler(options: StaticOptions): StaticHandler {
   };
 
   return {
-    async serve(url) {
+    async serve(url, req) {
       const root = await canonicalRoot();
       const target = resolveTarget(root, url.pathname);
       if (!isPathSafe(root, target)) return null;
@@ -63,14 +79,27 @@ export function createStaticHandler(options: StaticOptions): StaticHandler {
 
       const size = file.size;
       const mtimeMs = file.lastModified;
+      const etag = buildEtag(size, mtimeMs);
+      const lastModified = new Date(mtimeMs).toUTCString();
+
+      if (req && isNotModified(req, etag, mtimeMs)) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            'Cache-Control': STATIC_CACHE_CONTROL,
+            ETag: etag,
+            'Last-Modified': lastModified,
+          },
+        });
+      }
 
       return new Response(file, {
         headers: {
           'Content-Type': file.type || FALLBACK_MIME,
           'Content-Length': String(size),
           'Cache-Control': STATIC_CACHE_CONTROL,
-          ETag: buildEtag(size, mtimeMs),
-          'Last-Modified': new Date(mtimeMs).toUTCString(),
+          ETag: etag,
+          'Last-Modified': lastModified,
         },
       });
     },

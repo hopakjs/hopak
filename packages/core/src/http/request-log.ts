@@ -48,7 +48,7 @@ export function requestLog(options: RequestLogOptions = {}): After {
 
   return (ctx, { response, error }) => {
     const status = response?.status ?? 500;
-    const durationMs = Date.now() - ctx.startedAt;
+    const durationMs = Math.round(performance.now() - ctx.startedAt);
     const rid = ctx.requestId;
     const extraFields = extra?.(ctx);
 

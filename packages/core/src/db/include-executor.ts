@@ -221,7 +221,7 @@ function mergeWhere(system: WhereClause, user: WhereClause | undefined): WhereCl
 /**
  * For `hasMany` / `hasOne`, locate the single `belongsTo(<parentName>)`
  * field on the target model. Throws with a friendly message when zero or
- * multiple candidates exist — that disambiguation isn't supported in 0.1.0.
+ * multiple candidates exist — that disambiguation isn't supported yet.
  */
 function findInverseBelongsTo(
   target: ModelDefinition,
@@ -243,7 +243,7 @@ function findInverseBelongsTo(
   if (matches.length > 1) {
     throw new Error(
       `Cannot include "${relationName}": "${target.name}" has multiple belongsTo("${parentName}") ` +
-        `(${matches.join(', ')}). Explicit disambiguation is not yet supported in 0.1.0.`,
+        `(${matches.join(', ')}). Explicit disambiguation is not supported yet.`,
     );
   }
   return matches[0] as string;

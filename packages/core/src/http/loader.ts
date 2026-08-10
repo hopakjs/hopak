@@ -4,6 +4,7 @@ import { Glob } from 'bun';
 import { errorMessage } from '../internal/errors';
 import type { Router } from './router';
 import { HTTP_METHODS, type RouteDefinition } from './types';
+import { isWsHandlers } from './websocket';
 
 export interface RouteLoaderOptions {
   routesDir: string;
@@ -58,6 +59,15 @@ async function loadOneFile(
   const mod = (await import(fullPath)) as Record<string, unknown>;
   let registered = 0;
 
+  let ws = mod.WS;
+  if (ws !== undefined && !isWsHandlers(ws)) {
+    errors.push({
+      file: fullPath,
+      message: 'Export "WS" is not a defineWebSocket() result',
+    });
+    ws = undefined;
+  }
+
   for (const method of HTTP_METHODS) {
     const exported = mod[method];
     if (exported === undefined) continue;
@@ -65,12 +75,41 @@ async function loadOneFile(
       errors.push({ file: fullPath, message: `Export "${method}" is not a defineRoute() result` });
       continue;
     }
-    router.add(method, pattern, exported, fullPath);
+    // WS handlers ride on the GET route — the upgrade request is a GET.
+    const definition =
+      method === 'GET' && ws ? { ...exported, ws: ws as RouteDefinition['ws'] } : exported;
+    router.add(method, pattern, definition, fullPath);
     registered += 1;
+    if (method === 'GET' && ws) ws = undefined;
   }
 
   if (registered === 0 && isRouteDefinition(mod.default)) {
-    router.add('GET', pattern, mod.default, fullPath);
+    const definition = ws ? { ...mod.default, ws: ws as RouteDefinition['ws'] } : mod.default;
+    router.add('GET', pattern, definition, fullPath);
+    registered += 1;
+    if (ws) ws = undefined;
+  }
+
+  if (ws) {
+    router.add(
+      'GET',
+      pattern,
+      {
+        handler: () =>
+          new Response(
+            JSON.stringify({
+              error: 'UPGRADE_REQUIRED',
+              message: 'This endpoint speaks WebSocket. Connect with a WebSocket client.',
+            }),
+            {
+              status: 426,
+              headers: { 'content-type': 'application/json;charset=utf-8', Upgrade: 'websocket' },
+            },
+          ),
+        ws: ws as RouteDefinition['ws'],
+      },
+      fullPath,
+    );
     registered += 1;
   }
 

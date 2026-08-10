@@ -26,18 +26,23 @@ function omit<T extends Record<string, unknown>>(
   return result;
 }
 
+/**
+ * Strip fields marked `excludeFromJson` (password / secret / token).
+ * The return type keeps `T` for inference through CRUD handlers — the
+ * stripped keys are absent at runtime even though the type retains them.
+ */
 export function serializeForResponse<T extends Record<string, unknown>>(
   value: T,
   model: ModelDefinition,
-): Record<string, unknown> {
-  return omit(value, excludedFields(model));
+): T {
+  return omit(value, excludedFields(model)) as T;
 }
 
 export function serializeListForResponse<T extends Record<string, unknown>>(
   rows: readonly T[],
   model: ModelDefinition,
-): Record<string, unknown>[] {
+): T[] {
   const excluded = excludedFields(model);
-  if (excluded.size === 0) return rows as Record<string, unknown>[];
-  return rows.map((row) => omit(row, excluded));
+  if (excluded.size === 0) return rows as T[];
+  return rows.map((row) => omit(row, excluded) as T);
 }

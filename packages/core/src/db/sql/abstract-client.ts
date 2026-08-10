@@ -140,7 +140,7 @@ export abstract class AbstractSqlModelClient<TRow extends Record<string, unknown
     );
     if (keys.length !== 1) {
       throw new Error(
-        "cursor must have exactly one key. Multi-column cursors aren't supported in 0.1.0.",
+        "cursor must have exactly one key. Multi-column cursors aren't supported yet.",
       );
     }
     const [key] = keys as [string];
