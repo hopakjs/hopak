@@ -5,7 +5,6 @@
   "type": "module",
   "workspaces": ["packages/*", "examples/*", "bench"],
   "scripts": {
-    "build": "bun run --filter '*' build",
     "test": "bun test",
     "lint": "biome check .",
     "format": "biome format --write .",

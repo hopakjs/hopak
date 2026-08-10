@@ -1,6 +1,6 @@
 {
   "name": "@hopak/testing",
-  "version": "0.2.10",
+  "version": "1.0.0",
   "description": "Test helpers for Hopak.js — test server, JSON client.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",
@@ -27,11 +27,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@hopak/common": "workspace:*",
-    "@hopak/core": "workspace:*"
-  },
   "peerDependencies": {
+    "@hopak/common": "workspace:*",
+    "@hopak/core": "workspace:*",
     "mysql2": "^3.11.0",
     "postgres": "^3.4.0"
   },

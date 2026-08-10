@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "hopak dev",
-    "start": "bun run main.ts"
+    "start": "bun run main.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hopak/core": "workspace:*"
