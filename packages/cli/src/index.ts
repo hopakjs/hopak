@@ -4,6 +4,7 @@ import { runDev } from './commands/dev';
 import { runGenerate } from './commands/generate';
 import { runMigrate } from './commands/migrate';
 import { runNew } from './commands/new';
+import { runOpenapi } from './commands/openapi';
 import { runSync } from './commands/sync';
 import { runUse } from './commands/use';
 import { CLI_VERSION } from './version';
@@ -25,6 +26,8 @@ Commands:
   migrate <sub>           Schema migrations:
                           init | new <name> | up | down | status
   check                   Audit project state (config, models, routes)
+  openapi                 Print an OpenAPI 3.1 spec for the app
+    --out <file>          Write to a file instead of stdout
   use <capability>        Enable a capability in an existing project
                           (sqlite, postgres, mysql, request-log, auth)
   --help, -h              Show this help
@@ -125,6 +128,18 @@ const COMMANDS: Record<string, Command> = {
   check: {
     describe: 'Audit project state',
     run: ({ log }) => runCheck({ log }),
+  },
+  openapi: {
+    describe: 'Print an OpenAPI 3.1 spec for the app',
+    run: ({ args, log }) => {
+      let out: string | undefined;
+      for (let i = 0; i < args.length; i++) {
+        const a = args[i];
+        if (a === '--out') out = args[i + 1];
+        else if (a?.startsWith('--out=')) out = a.slice(6);
+      }
+      return runOpenapi({ log, ...(out ? { out } : {}) });
+    },
   },
   use: {
     describe: 'Enable a capability (sqlite, postgres, mysql, request-log, auth)',
