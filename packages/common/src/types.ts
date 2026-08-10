@@ -16,6 +16,12 @@ export interface ServerOptions {
   port: number;
   host: string;
   https?: HttpsOptions;
+  /**
+   * Maximum accepted request body in bytes. Requests over the limit are
+   * rejected with 413 before the body reaches your handlers. Default:
+   * 16 MiB.
+   */
+  maxRequestBodyBytes?: number;
 }
 
 export interface HttpsOptions {

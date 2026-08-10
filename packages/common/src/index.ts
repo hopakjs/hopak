@@ -8,6 +8,7 @@ export {
   RateLimited,
   InternalError,
   ConfigError,
+  PluginError,
 } from './errors';
 export {
   type Logger,

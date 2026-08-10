@@ -59,3 +59,8 @@ export class ConfigError extends HopakError {
   override readonly status = HttpStatus.InternalServerError;
   override readonly code = 'CONFIG_ERROR';
 }
+
+export class PluginError extends HopakError {
+  override readonly status = HttpStatus.InternalServerError;
+  override readonly code = 'PLUGIN_ERROR';
+}
