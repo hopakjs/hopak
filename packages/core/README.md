@@ -7,7 +7,7 @@
 [![npm](https://img.shields.io/npm/v/@hopak/core.svg)](https://www.npmjs.com/package/@hopak/core)
 [![license](https://img.shields.io/npm/l/@hopak/core.svg)](https://github.com/hopakjs/hopak/blob/main/LICENSE)
 
-The runtime of [Hopak.js](https://hopak.dev) — a file-first backend framework for Bun.
+The runtime of [Hopak.js](https://hopak.dev) — a file-first backend framework for Bun. Routing, typed models, CRUD, migrations, plugins, model hooks, OpenAPI generation, WebSockets and SSE.
 
 ```bash
 bun add @hopak/core

@@ -11,7 +11,8 @@
 
 <p align="center">
   <strong>A backend framework for <a href="https://bun.sh">Bun</a>.</strong><br>
-  File-based routing. Typed models. Scaffolded CRUD.
+  File-based routing. Typed models. Scaffolded CRUD.<br>
+  Plugins. Model hooks. OpenAPI. WebSockets &amp; SSE.
 </p>
 
 <p align="center">
