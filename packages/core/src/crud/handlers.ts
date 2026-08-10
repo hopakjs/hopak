@@ -79,10 +79,25 @@ export function createFindOneHandler(model: ModelDefinition) {
   };
 }
 
+/**
+ * Schemas are built on first request, not when the route is declared.
+ * A plugin-registered field type is only in the registry after plugin
+ * setup, and route modules can be imported before that (test files
+ * assembling a router by hand, tooling importing route files). One
+ * build per handler either way — the result is memoized.
+ */
+function lazySchema(build: () => v.GenericSchema): () => v.GenericSchema {
+  let schema: v.GenericSchema | undefined;
+  return () => {
+    schema ??= build();
+    return schema;
+  };
+}
+
 export function createCreateHandler(model: ModelDefinition) {
-  const schema = buildModelSchema(model, { omitId: true });
+  const schemaFor = lazySchema(() => buildModelSchema(model, { omitId: true }));
   return async (ctx: RequestContext) => {
-    const data = validateBody(schema, await ctx.body());
+    const data = validateBody(schemaFor(), await ctx.body());
     const row = await clientFor(ctx, model).create(data);
     ctx.setStatus(HttpStatus.Created);
     return serializeForResponse(row, model);
@@ -90,9 +105,9 @@ export function createCreateHandler(model: ModelDefinition) {
 }
 
 export function createUpdateHandler(model: ModelDefinition, partial: boolean) {
-  const schema = buildModelSchema(model, { omitId: true, partial });
+  const schemaFor = lazySchema(() => buildModelSchema(model, { omitId: true, partial }));
   return async (ctx: RequestContext) => {
-    const data = validateBody(schema, await ctx.body());
+    const data = validateBody(schemaFor(), await ctx.body());
     const row = await clientFor(ctx, model).update(parseId(ctx.params.id), data);
     return serializeForResponse(row, model);
   };

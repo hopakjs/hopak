@@ -63,7 +63,7 @@ export async function detectDrift(
 ): Promise<readonly DriftReport[]> {
   const reports: DriftReport[] = [];
   for (const model of models) {
-    const table = pluralize(model.name);
+    const table = model.tableName;
     const dbColumns = await listColumns(db, dialect, table);
     if (dbColumns.length === 0) continue;
     const dbSet = new Set(dbColumns);

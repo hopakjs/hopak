@@ -44,12 +44,26 @@ interface DialectSlot<TDdl, TFactory> {
   readonly column: TFactory | null;
 }
 
+/**
+ * How a custom field is stored. A plugin picks one of these instead of
+ * writing three Drizzle column factories by hand; core maps it to the
+ * right column and DDL per dialect. `text` covers most cases.
+ */
+export type FieldStorage = 'text' | 'integer' | 'real' | 'boolean' | 'timestamp' | 'json';
+
 export interface FieldAdapter {
   readonly sqlite: DialectSlot<SqliteDdl, SqliteColumnFactory>;
   readonly postgres: DialectSlot<PostgresDdl, PostgresColumnFactory>;
   readonly mysql: DialectSlot<MysqlDdl, MysqlColumnFactory>;
   readonly schema: SchemaFactory;
   readonly virtual?: boolean;
+  readonly columnName?: (fieldName: string) => string;
+}
+
+/** What a plugin passes to `ctx.registerField` — see `FieldStorage`. */
+export interface FieldTypeSpec {
+  readonly storage: FieldStorage;
+  readonly schema: SchemaFactory;
   readonly columnName?: (fieldName: string) => string;
 }
 
@@ -210,6 +224,35 @@ const BUILT_IN_ADAPTERS: Record<FieldType, FieldAdapter> = {
   hasMany: virtualAdapter,
   hasOne: virtualAdapter,
 };
+
+const STORAGE_ADAPTERS: Record<FieldStorage, FieldAdapter> = {
+  text: stringText,
+  integer: numberInt,
+  real: numberReal,
+  boolean: booleanCol,
+  timestamp: dateCol,
+  json: jsonCol,
+};
+
+/**
+ * Expand a plugin's storage choice into a full adapter. Reusing the
+ * built-in adapters is what guarantees a custom field gets a real
+ * Drizzle column on all three dialects — a hand-written adapter without
+ * one produces a table column no query can write to.
+ */
+export function adapterFromSpec(spec: FieldTypeSpec): FieldAdapter {
+  const base = STORAGE_ADAPTERS[spec.storage];
+  if (!base) {
+    throw new PluginError(
+      `Unknown storage '${spec.storage}'. Pick one of: ${Object.keys(STORAGE_ADAPTERS).join(', ')}.`,
+    );
+  }
+  return {
+    ...base,
+    schema: spec.schema,
+    ...(spec.columnName ? { columnName: spec.columnName } : {}),
+  };
+}
 
 interface RegisteredAdapter {
   readonly adapter: FieldAdapter;

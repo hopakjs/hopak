@@ -17,6 +17,8 @@ import { loadFileRoutes } from '../http/loader';
 import { EMPTY_MIDDLEWARE, type Middleware } from '../http/middleware';
 import { Router } from '../http/router';
 import { type ListeningServer, startServer } from '../http/server';
+import { errorMessage } from '../internal/errors';
+import { listApplied } from '../migrations/tracker';
 import { ModelRegistry } from '../model/registry';
 import { type HopakPlugin, setupPlugins } from '../plugin';
 import { Scanner } from '../scanner';
@@ -90,6 +92,7 @@ async function connectDatabase(
   try {
     if (await hasMigrationsDir(config.paths.migrations)) {
       log.debug('Schema evolution managed by migrations/ — skipping sync');
+      await warnOnPendingMigrations(db, config, log);
     } else {
       await db.sync();
       await warnOnDrift(db, config, registry, log);
@@ -123,6 +126,34 @@ async function hasMigrationsDir(dir: string): Promise<boolean> {
   const glob = new Glob('*.ts');
   for await (const _ of glob.scan({ cwd: dir })) return true;
   return false;
+}
+
+/**
+ * Booting with unapplied migrations means the tables the models expect
+ * may not exist, and the first request dies with a driver error nobody
+ * can act on. Counting files against the tracker table is cheap — no
+ * migration module is imported — and turns that into a pointer.
+ */
+async function warnOnPendingMigrations(
+  db: Database,
+  config: HopakConfig,
+  log: Logger,
+): Promise<void> {
+  try {
+    const glob = new Glob('*.ts');
+    const files: string[] = [];
+    for await (const file of glob.scan({ cwd: config.paths.migrations })) files.push(file);
+    const applied = await listApplied(db, config.database.dialect);
+    const pending = files.length - applied.length;
+    if (pending > 0) {
+      log.warn(
+        `${pending} migration(s) not applied yet — the schema may be missing tables your models expect.\n\n  hopak migrate status   # see what is pending\n  hopak migrate up       # apply them`,
+      );
+    }
+  } catch (cause) {
+    // Never block boot on the check itself.
+    log.debug('Could not check migration state', { error: errorMessage(cause) });
+  }
 }
 
 async function buildRouter(config: HopakConfig, log: Logger): Promise<Router> {

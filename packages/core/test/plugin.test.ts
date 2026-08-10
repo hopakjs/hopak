@@ -29,9 +29,7 @@ function uuidPlugin(name = '@hopak/uuid'): HopakPlugin {
     name,
     setup(ctx) {
       ctx.registerField('uuid', {
-        sqlite: { ddl: 'TEXT', column: null },
-        postgres: { ddl: 'TEXT', column: null },
-        mysql: { ddl: 'TEXT', column: null },
+        storage: 'text',
         schema: () => v.pipe(v.string(), v.uuid()),
       });
     },
@@ -57,6 +55,26 @@ describe('plugin registry', () => {
     expect(bad.ok).toBe(false);
   });
 
+  test('a plugin field round-trips through the database', async () => {
+    await setupPlugins([uuidPlugin()], config, log);
+    const device = model('device', {
+      name: text().required(),
+      externalId: uuid().required(),
+    });
+    const db = createSqliteDatabase({ models: [device] });
+    await db.sync();
+
+    const id = '7b9f8f64-1c5a-4b7e-9a10-b7c3c4d5e6f7';
+    const created = await db.model('device').create({ name: 'sensor', externalId: id });
+    // A registered type must produce a real Drizzle column — otherwise
+    // the value is silently dropped on insert and reads come back null.
+    expect(created.externalId).toBe(id);
+
+    const [found] = await db.model('device').findMany({ where: { externalId: id } });
+    expect(found?.name).toBe('sensor');
+    await db.close();
+  });
+
   test('same plugin re-registering on a second boot is a no-op', async () => {
     await setupPlugins([uuidPlugin()], config, log);
     await setupPlugins([uuidPlugin()], config, log);
@@ -73,12 +91,7 @@ describe('plugin registry', () => {
     const evil: HopakPlugin = {
       name: '@rival/text',
       setup(ctx) {
-        ctx.registerField('text', {
-          sqlite: { ddl: 'TEXT', column: null },
-          postgres: { ddl: 'TEXT', column: null },
-          mysql: { ddl: 'TEXT', column: null },
-          schema: () => v.string(),
-        });
+        ctx.registerField('text', { storage: 'text', schema: () => v.string() });
       },
     };
     await expect(setupPlugins([evil], config, log)).rejects.toThrow(/already registered/);

@@ -120,7 +120,7 @@ export function buildSchemaGeneric<TColumn, TTable>(
       );
     }
 
-    schema[model.name] = ops.tableFactory(pluralize(model.name), columns);
+    schema[model.name] = ops.tableFactory(model.tableName, columns);
   }
 
   return schema;

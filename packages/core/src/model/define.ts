@@ -1,3 +1,4 @@
+import { pluralize } from '@hopak/common';
 import type { Id } from '../db/client';
 import type { FieldBuilder, FieldDefinition, InferFields } from '../fields/base';
 
@@ -33,6 +34,13 @@ type AnyFieldMap = Record<string, FieldBuilder<unknown, boolean>>;
 
 export interface ModelDefinition<TFields extends AnyFieldMap = AnyFieldMap> {
   readonly name: string;
+  /**
+   * Physical table name — the pluralized model name (`post` → `posts`).
+   * Needed whenever you write SQL by hand: `db.sql`, migration DDL,
+   * index definitions. A tagged template can't interpolate an
+   * identifier, so read it when composing statement text.
+   */
+  readonly tableName: string;
   readonly fields: { [K in keyof TFields]: FieldDefinition };
   readonly options: Required<ModelOptions>;
   readonly hooks?: ModelHooks;
@@ -51,6 +59,7 @@ export function model<TFields extends AnyFieldMap>(
   const { hooks, ...rest } = options;
   return {
     name,
+    tableName: pluralize(name),
     fields: built,
     options: { timestamps: true, ...rest },
     ...(hooks ? { hooks: hooks as ModelHooks } : {}),

@@ -62,6 +62,18 @@ function methodNotAllowedResponse(allowed: readonly string[] = []): Response {
   );
 }
 
+function applyContextHeaders(response: Response, headers: Headers): void {
+  try {
+    for (const [name, value] of headers) {
+      if (!response.headers.has(name)) response.headers.set(name, value);
+    }
+  } catch {
+    // A handler that returns a `fetch()` result hands us immutable
+    // headers. Proxying is a fair thing to do; losing ctx.setHeader on
+    // that one response is better than failing the request.
+  }
+}
+
 async function runBefore(
   ctx: RequestContext,
   chain: readonly Before[],
@@ -181,12 +193,13 @@ export function createRequestHandler(options: PipelineOptions) {
     } catch (cause) {
       error = cause;
       response = handleError(cause, { log, exposeStack });
-      // Headers set through ctx.setHeader (X-Request-Id, Retry-After, ...)
-      // belong on error responses too.
-      for (const [name, value] of responseInit.headers) {
-        if (!response.headers.has(name)) response.headers.set(name, value);
-      }
     }
+
+    // `toResponse` already applied these to handler return values, but a
+    // Response built elsewhere — static file, 404, 405, an error, or one
+    // a handler constructed itself — never saw them. Merge without
+    // overwriting: whoever built the Response was more specific.
+    applyContextHeaders(response, responseInit.headers);
 
     await runAfter(ctx, chains.after, { response, error }, log);
     // Bun's contract: return nothing for a request that was upgraded.

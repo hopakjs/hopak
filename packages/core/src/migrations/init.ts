@@ -38,7 +38,7 @@ export function renderInitMigration(models: readonly ModelDefinition[]): string 
   // down() drops tables in reverse order so FK targets live long enough.
   const drops = [...ordered]
     .reverse()
-    .map((m) => pluralize(m.name))
+    .map((m) => m.tableName)
     .map((t) => `  await ctx.sql\`DROP TABLE IF EXISTS ${quoteForAll(t)}\`;`)
     .join('\n');
 

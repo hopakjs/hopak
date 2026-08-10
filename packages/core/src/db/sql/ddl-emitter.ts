@@ -81,7 +81,7 @@ function fkConstraintClause(
 }
 
 export function buildCreateTableSql(model: ModelDefinition, ops: DialectDdlOps): string {
-  const tableName = pluralize(model.name);
+  const tableName = model.tableName;
   const lines: string[] = [ops.idClause];
   const constraints: string[] = [];
 
@@ -126,7 +126,7 @@ export function buildIndexStatements(
   model: ModelDefinition,
   ops: DialectDdlOps,
 ): readonly string[] {
-  const tableName = pluralize(model.name);
+  const tableName = model.tableName;
   const stmts: string[] = [];
   for (const [fieldName, field] of Object.entries(model.fields)) {
     if (isVirtual(field)) continue;

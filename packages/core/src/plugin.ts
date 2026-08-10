@@ -1,5 +1,5 @@
 import { type HopakConfig, type Logger, PluginError } from '@hopak/common';
-import { type FieldAdapter, registerFieldAdapter } from './fields/adapters';
+import { type FieldTypeSpec, adapterFromSpec, registerFieldAdapter } from './fields/adapters';
 import type { After, Before, Middleware, Wrap } from './http/middleware';
 
 /**
@@ -17,13 +17,17 @@ export interface PluginContext {
   readonly config: Readonly<HopakConfig>;
   readonly log: Logger;
   /**
-   * Register a custom field type. Ship a matching `FieldBuilder` subclass
-   * from the plugin package so models get typed builders:
+   * Register a custom field type. Declare how it is stored and how it
+   * validates; core wires the column and DDL for all three dialects.
+   * Ship a matching `FieldBuilder` subclass so models get typed builders:
    *
-   *   ctx.registerField('uuid', uuidAdapter);
+   *   ctx.registerField('uuid', {
+   *     storage: 'text',
+   *     schema: () => v.pipe(v.string(), v.uuid()),
+   *   });
    *   export const uuid = () => new UuidField();
    */
-  registerField(type: string, adapter: FieldAdapter): void;
+  registerField(type: string, spec: FieldTypeSpec): void;
   /** Add global middleware — runs before middleware added via `hopak().before()`. */
   before(...fns: Before[]): void;
   after(...fns: After[]): void;
@@ -58,8 +62,8 @@ export async function setupPlugins(
     const ctx: PluginContext = {
       config,
       log,
-      registerField(type, adapter) {
-        registerFieldAdapter(type, adapter, plugin.name);
+      registerField(type, spec) {
+        registerFieldAdapter(type, adapterFromSpec(spec), plugin.name);
       },
       before(...fns) {
         before.push(...fns);

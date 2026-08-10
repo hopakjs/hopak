@@ -10,7 +10,7 @@ export * from './app';
 export * from './db';
 export * from './migrations';
 export { hopak, type HopakInstance } from './hopak';
-export type { HopakPlugin, PluginContext } from './plugin';
+export { setupPlugins, type HopakPlugin, type PluginContext, type PluginRuntime } from './plugin';
 export {
   buildOpenApiSpec,
   type BuildOpenApiOptions,

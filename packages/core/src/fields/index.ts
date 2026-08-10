@@ -6,7 +6,15 @@ export {
   type InferFieldValue,
   type InferFields,
 } from './base';
-export { type FieldAdapter, adapterFor, columnNameFor, isVirtual } from './adapters';
+export {
+  type FieldAdapter,
+  type FieldStorage,
+  type FieldTypeSpec,
+  adapterFor,
+  adapterFromSpec,
+  columnNameFor,
+  isVirtual,
+} from './adapters';
 export {
   StringField,
   SecretField,
