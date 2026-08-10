@@ -4,6 +4,8 @@ export {
   type JwtAuthOptions,
   credentialsLogin,
   credentialsSignup,
+  hashPassword,
+  isHashed,
   jwtAuth,
 } from './jwt';
 export { requireRole } from './rbac';

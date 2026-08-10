@@ -87,10 +87,38 @@ export function jwtAuth(options: JwtAuthOptions): JwtAuth {
   return { requireAuth, signToken };
 }
 
+const HASH_PREFIXES = ['$argon2', '$2a$', '$2b$', '$2y$'] as const;
+
+/** True for PHC / bcrypt strings. No plaintext password starts like this. */
+export function isHashed(value: string): boolean {
+  return HASH_PREFIXES.some((prefix) => value.startsWith(prefix));
+}
+
+/**
+ * Hash a password unless it already is a hash. Idempotent on purpose:
+ * hashing can legitimately be requested from two places — a model's
+ * `beforeCreate` hook and `credentialsSignup` — and a double hash would
+ * never match at login. Use this in hooks:
+ *
+ *   hooks: {
+ *     beforeCreate: async (data) => ({
+ *       ...data,
+ *       password: await hashPassword(String(data.password)),
+ *     }),
+ *   }
+ */
+export function hashPassword(value: string): Promise<string> {
+  return isHashed(value) ? Promise.resolve(value) : Bun.password.hash(value);
+}
+
 /**
  * POST handler: validate body against the model, hash the password
  * field, insert the row, strip sensitive fields, sign a token.
  * Returns `{ user, token }`.
+ *
+ * Hashing happens here unless the value already is a hash — a model
+ * that hashes in a `beforeCreate` hook keeps working, without the
+ * password being hashed twice.
  */
 export function credentialsSignup(params: {
   model: ModelDefinition;
@@ -110,8 +138,9 @@ export function credentialsSignup(params: {
     if (!result.ok) throw new ValidationError('Invalid signup', result.errors);
 
     const data = { ...result.data };
-    if (typeof data[pwField] === 'string') {
-      data[pwField] = await Bun.password.hash(String(data[pwField]));
+    const raw = data[pwField];
+    if (typeof raw === 'string') {
+      data[pwField] = await hashPassword(raw);
     }
     const row = await ctx.db.model(params.model.name).create(data);
     return {
