@@ -1,6 +1,6 @@
 {
   "name": "@hopak/common",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shared types, errors, logger, filesystem helpers for Hopak.js.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",

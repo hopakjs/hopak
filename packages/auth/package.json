@@ -1,6 +1,6 @@
 {
   "name": "@hopak/auth",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Authentication for Hopak.js — JWT, credential signup/login, OAuth (GitHub + Google), and role-based access control.",
   "license": "MIT",
   "author": "Volodymyr Press <vladimpress@gmail.com>",
